@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Build output
+frontend/out/
+frontend/dist/
+backend/dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Env
+.env
+*.tgz
+
+# Python venv
+venv/
+.venv/
+
+# Test results
+frontend/test-results/

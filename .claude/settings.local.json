@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(where node:*)",
+      "Bash(where python:*)",
+      "Bash(where npm:*)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/nodejs:/c/Users/snowi/AppData/Roaming/npm:/c/Users/snowi/AppData/Local/fnm_multishells\")",
+      "Bash(where.exe node:*)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Users/snowi/AppData/Roaming/**)",
+      "Read(//c/Users/snowi/**)",
+      "Bash(winget install:*)",
+      "Bash(export PATH=\"/c/Program Files/nodejs:$PATH\")"
+    ]
+  }
+}
