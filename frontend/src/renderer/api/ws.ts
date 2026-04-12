@@ -1,8 +1,6 @@
 import type { ExecutionEvent } from '../types/api'
 import type { Flow, FlowBlock } from '../types/flow'
 
-const WS_URL = 'ws://127.0.0.1:18080/ws/execution'
-
 type EventHandler = (event: ExecutionEvent) => void
 
 /** Convert block tree to flat nodes/edges for the backend executor */
@@ -33,10 +31,9 @@ function blocksToNodesEdges(blocks: FlowBlock[]): {
           sourceHandle: handleName,
           targetHandle: 'in'
         })
-        handleName = 'out' // after first edge, use 'out'
+        handleName = 'out'
       }
 
-      // Handle children for control blocks
       if (block.type === 'control.if') {
         if (block.children?.length) walk(block.children, block.id, 'true')
         if (block.elseChildren?.length) walk(block.elseChildren, block.id, 'false')
@@ -56,46 +53,37 @@ function blocksToNodesEdges(blocks: FlowBlock[]): {
   return { nodes, edges }
 }
 
-class WebSocketClient {
-  private ws: WebSocket | null = null
+declare global {
+  interface Window {
+    api?: {
+      openFile: () => Promise<{ filePath: string; content: string } | null>
+      saveFile: (content: string, currentPath?: string) => Promise<string | null>
+      sendToBackend: (msg: unknown) => void
+      onBackendEvent: (callback: (event: unknown) => void) => () => void
+    }
+  }
+}
+
+class BackendClient {
   private handlers: Set<EventHandler> = new Set()
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private unsub: (() => void) | null = null
 
   connect(): void {
-    if (this.ws?.readyState === WebSocket.OPEN) return
-
-    this.ws = new WebSocket(WS_URL)
-
-    this.ws.onopen = (): void => {
-      console.log('WebSocket connected')
-    }
-
-    this.ws.onmessage = (event): void => {
-      try {
-        const data = JSON.parse(event.data) as ExecutionEvent
+    if (window.api?.onBackendEvent) {
+      // Electron IPC mode (stdio) — no TCP
+      this.unsub = window.api.onBackendEvent((event) => {
+        const data = event as ExecutionEvent
         this.handlers.forEach((h) => h(data))
-      } catch (e) {
-        console.error('Failed to parse WS message:', e)
-      }
-    }
-
-    this.ws.onclose = (): void => {
-      console.log('WebSocket disconnected, reconnecting in 2s...')
-      this.reconnectTimer = setTimeout(() => this.connect(), 2000)
-    }
-
-    this.ws.onerror = (err): void => {
-      console.error('WebSocket error:', err)
+      })
+      console.log('Backend connected via IPC (stdio)')
+    } else {
+      console.warn('No backend IPC available (running in browser?)')
     }
   }
 
   disconnect(): void {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer)
-      this.reconnectTimer = null
-    }
-    this.ws?.close()
-    this.ws = null
+    this.unsub?.()
+    this.unsub = null
   }
 
   subscribe(handler: EventHandler): () => void {
@@ -130,12 +118,12 @@ class WebSocketClient {
   }
 
   private send(msg: unknown): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg))
+    if (window.api?.sendToBackend) {
+      window.api.sendToBackend(msg)
     } else {
-      console.warn('WebSocket not connected')
+      console.warn('Backend not connected')
     }
   }
 }
 
-export const wsClient = new WebSocketClient()
+export const wsClient = new BackendClient()

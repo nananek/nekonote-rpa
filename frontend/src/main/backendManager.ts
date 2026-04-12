@@ -1,33 +1,36 @@
 import { ChildProcess, spawn } from 'child_process'
 import { join } from 'path'
 import { existsSync } from 'fs'
-import { app } from 'electron'
+import { app, ipcMain, BrowserWindow } from 'electron'
 import { is } from '@electron-toolkit/utils'
-
-const BACKEND_PORT = 18080
-const HEALTH_URL = `http://127.0.0.1:${BACKEND_PORT}/api/health`
+import * as readline from 'readline'
 
 export class BackendManager {
   private process: ChildProcess | null = null
+  private rl: readline.Interface | null = null
 
   async start(): Promise<void> {
-    // Check if backend is already running (remote mode)
-    if (await this.isHealthy()) {
-      console.log('Backend already running on port', BACKEND_PORT)
-      return
-    }
-
     const { command, args, cwd } = this.getBackendCommand()
-    console.log(`Starting backend: ${command} ${args.join(' ')}`)
+    console.log(`Starting backend (stdio): ${command} ${args.join(' ')}`)
 
     this.process = spawn(command, args, {
       cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       shell: true
     })
 
-    this.process.stdout?.on('data', (data: Buffer) => {
-      console.log('[backend]', data.toString().trim())
+    // Read JSON lines from stdout
+    this.rl = readline.createInterface({ input: this.process.stdout! })
+    this.rl.on('line', (line: string) => {
+      try {
+        const event = JSON.parse(line)
+        // Forward to all renderer windows
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('backend:event', event)
+        }
+      } catch {
+        console.log('[backend stdout]', line)
+      }
     })
 
     this.process.stderr?.on('data', (data: Buffer) => {
@@ -37,10 +40,16 @@ export class BackendManager {
     this.process.on('exit', (code) => {
       console.log('Backend process exited with code', code)
       this.process = null
+      this.rl = null
     })
 
-    // Wait for backend to be ready
-    await this.waitForHealth(20000)
+    // Set up IPC: renderer -> backend
+    ipcMain.on('backend:send', (_event, msg: unknown) => {
+      this.send(msg)
+    })
+
+    // Wait for "ready" message
+    await this.waitForReady(15000)
   }
 
   stop(): void {
@@ -48,58 +57,72 @@ export class BackendManager {
       console.log('Stopping backend...')
       this.process.kill()
       this.process = null
+      this.rl = null
+    }
+    ipcMain.removeAllListeners('backend:send')
+  }
+
+  send(msg: unknown): void {
+    if (this.process?.stdin?.writable) {
+      this.process.stdin.write(JSON.stringify(msg) + '\n')
     }
   }
 
   private getBackendCommand(): { command: string; args: string[]; cwd?: string } {
     if (is.dev) {
-      // Development: use python -m
       return {
         command: 'python',
-        args: ['-m', 'nekonote.main', '--port', String(BACKEND_PORT)],
-        cwd: undefined
+        args: ['-m', 'nekonote.main', '--stdio']
       }
     }
 
-    // Production: look for bundled engine executable
     const resourcesPath = join(app.getAppPath(), '..', 'engine')
     const engineExe = join(resourcesPath, 'nekonote-engine.exe')
 
     if (existsSync(engineExe)) {
       return {
         command: engineExe,
-        args: ['--port', String(BACKEND_PORT)],
+        args: ['--stdio'],
         cwd: resourcesPath
       }
     }
 
-    // Fallback: try python -m (if user has Python installed)
-    console.warn('Bundled engine not found, falling back to python -m')
+    console.warn('Bundled engine not found, falling back to python')
     return {
       command: 'python',
-      args: ['-m', 'nekonote.main', '--port', String(BACKEND_PORT)],
-      cwd: undefined
+      args: ['-m', 'nekonote.main', '--stdio']
     }
   }
 
-  private async isHealthy(): Promise<boolean> {
-    try {
-      const res = await fetch(HEALTH_URL)
-      return res.ok
-    } catch {
-      return false
-    }
-  }
+  private waitForReady(timeoutMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        console.warn('Backend ready timeout, continuing anyway')
+        resolve()
+      }, timeoutMs)
 
-  private async waitForHealth(timeoutMs: number): Promise<void> {
-    const start = Date.now()
-    while (Date.now() - start < timeoutMs) {
-      if (await this.isHealthy()) {
-        console.log('Backend is ready')
-        return
+      const handler = (line: string): void => {
+        try {
+          const msg = JSON.parse(line)
+          if (msg.type === 'ready') {
+            clearTimeout(timeout)
+            console.log('Backend is ready (stdio)')
+            // Remove this one-time listener, the main rl listener handles the rest
+            resolve()
+          }
+        } catch {
+          // ignore
+        }
       }
-      await new Promise((r) => setTimeout(r, 500))
-    }
-    console.warn('Backend health check timed out')
+
+      // Listen on the already-created readline
+      // The main rl.on('line') handler also fires, forwarding "ready" to renderer is fine
+      if (this.rl) {
+        this.rl.once('line', handler)
+      } else {
+        clearTimeout(timeout)
+        resolve()
+      }
+    })
   }
 }
