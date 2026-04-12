@@ -1,0 +1,63 @@
+import { useEffect, useState } from 'react'
+import { BlockEditor } from './components/BlockEditor/BlockEditor'
+import { NodePalette } from './components/FlowEditor/NodePalette'
+import { PropertiesPanel } from './components/PropertiesPanel/PropertiesPanel'
+import { CodePanel } from './components/CodeEditor/CodePanel'
+import { ExecutionPanel } from './components/ExecutionPanel/ExecutionPanel'
+import { Toolbar } from './components/Toolbar/Toolbar'
+import { wsClient } from './api/ws'
+import { useExecutionStore } from './stores/executionStore'
+import { useFlowStore } from './stores/flowStore'
+
+export type ViewMode = 'visual' | 'code' | 'split'
+
+export default function App(): JSX.Element {
+  const handleEvent = useExecutionStore((s) => s.handleEvent)
+  const selectedBlockId = useFlowStore((s) => s.selectedBlockId)
+  const [viewMode, setViewMode] = useState<ViewMode>('visual')
+
+  useEffect(() => {
+    wsClient.connect()
+    const unsub = wsClient.subscribe(handleEvent)
+    return () => {
+      unsub()
+      wsClient.disconnect()
+    }
+  }, [handleEvent])
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        backgroundColor: '#0f0f23',
+        color: '#e2e8f0'
+      }}
+    >
+      <Toolbar viewMode={viewMode} onViewModeChange={setViewMode} />
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+        {(viewMode === 'visual' || viewMode === 'split') && <NodePalette />}
+
+        {viewMode === 'visual' && (
+          <>
+            <BlockEditor />
+            <PropertiesPanel selectedNodeId={selectedBlockId} />
+          </>
+        )}
+
+        {viewMode === 'code' && <CodePanel />}
+
+        {viewMode === 'split' && (
+          <>
+            <BlockEditor />
+            <div style={{ width: 450, borderLeft: '1px solid #334155' }}>
+              <CodePanel />
+            </div>
+          </>
+        )}
+      </div>
+      <ExecutionPanel />
+    </div>
+  )
+}

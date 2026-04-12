@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.nekonote.app",
+  "productName": "Nekonote",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "out/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "../backend/dist/nekonote-engine",
+      "to": "engine",
+      "filter": ["**/*"]
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": null
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "installerLanguages": ["ja"],
+    "language": "1041",
+    "installerIcon": null,
+    "uninstallerIcon": null,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Nekonote"
+  }
+}
