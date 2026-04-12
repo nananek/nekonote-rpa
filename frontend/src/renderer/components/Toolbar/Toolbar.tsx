@@ -5,14 +5,6 @@ import { wsClient } from '../../api/ws'
 import { t } from '../../i18n'
 import type { ViewMode } from '../../App'
 
-declare global {
-  interface Window {
-    api?: {
-      openFile: () => Promise<{ filePath: string; content: string } | null>
-      saveFile: (content: string, currentPath?: string) => Promise<string | null>
-    }
-  }
-}
 
 interface ToolbarProps {
   viewMode: ViewMode
