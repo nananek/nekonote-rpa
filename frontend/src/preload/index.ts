@@ -29,8 +29,8 @@ export const api = {
     return () => ipcRenderer.removeListener('flow:externalUpdate', handler)
   },
 
-  // Terminal
-  terminalSpawn: (opts?: { cmd?: string; cwd?: string }): Promise<boolean> =>
+  // Terminal (Claude Code only)
+  terminalSpawn: (opts?: { cwd?: string }): Promise<boolean> =>
     ipcRenderer.invoke('terminal:spawn', opts),
   terminalInput: (data: string): void => {
     ipcRenderer.send('terminal:input', data)
@@ -48,6 +48,23 @@ export const api = {
     const handler = (_: unknown, code: number): void => callback(code)
     ipcRenderer.on('terminal:exit', handler)
     return () => ipcRenderer.removeListener('terminal:exit', handler)
+  },
+
+  // Auto-Y
+  setAutoYes: (enabled: boolean): void => {
+    ipcRenderer.send('terminal:setAutoYes', enabled)
+  },
+  getAutoYes: (): Promise<{ enabled: boolean; log: Array<{ time: string; prompt: string }> }> =>
+    ipcRenderer.invoke('terminal:getAutoYes'),
+  onAutoYes: (callback: (entry: { time: string; prompt: string }) => void): (() => void) => {
+    const handler = (_: unknown, entry: { time: string; prompt: string }): void => callback(entry)
+    ipcRenderer.on('terminal:autoYes', handler)
+    return () => ipcRenderer.removeListener('terminal:autoYes', handler)
+  },
+  onAutoYesState: (callback: (state: { enabled: boolean; log: Array<{ time: string; prompt: string }> }) => void): (() => void) => {
+    const handler = (_: unknown, state: any): void => callback(state)
+    ipcRenderer.on('terminal:autoYesState', handler)
+    return () => ipcRenderer.removeListener('terminal:autoYesState', handler)
   }
 }
 
