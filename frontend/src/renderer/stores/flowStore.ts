@@ -89,10 +89,16 @@ interface FlowState {
   removeBlock: (id: string) => void
   updateBlock: (id: string, updater: (b: FlowBlock) => FlowBlock) => void
   moveBlock: (id: string, targetParentId: string | null, targetIndex: number) => void
+  duplicateBlock: (id: string) => void
+  toggleDisabled: (id: string) => void
+  copyBlock: (id: string) => void
+  pasteBlock: () => void
+  searchBlocks: (query: string) => FlowBlock[]
   undo: () => void
   redo: () => void
   canUndo: () => boolean
   canRedo: () => boolean
+  _clipboard: FlowBlock | null
 }
 
 export const useFlowStore = create<FlowState>((set, get) => ({
@@ -102,6 +108,8 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   selectedBlockId: null,
   _history: [],
   _future: [],
+
+  _clipboard: null,
 
   setFlow: (flow) => set({ flow, isDirty: false, _history: [], _future: [] }),
 
@@ -178,6 +186,95 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     const history = [...state._history, cloneFlow(state.flow)]
     if (history.length > MAX_HISTORY) history.shift()
     set({ flow, isDirty: true, _history: history, _future: [] })
+  },
+
+  duplicateBlock: (id) => {
+    const state = get()
+    const block = findBlock(state.flow.blocks, id)
+    if (!block) return
+    const clone: FlowBlock = JSON.parse(JSON.stringify(block))
+    clone.id = `block_${crypto.randomUUID().slice(0, 8)}`
+    clone.label = `${clone.label} (copy)`
+    // Reassign IDs for children recursively
+    const reassignIds = (b: FlowBlock): void => {
+      b.id = `block_${crypto.randomUUID().slice(0, 8)}`
+      b.children?.forEach(reassignIds)
+      b.elseChildren?.forEach(reassignIds)
+    }
+    clone.children?.forEach(reassignIds)
+    clone.elseChildren?.forEach(reassignIds)
+    // Insert after the original in root blocks
+    const flow = cloneFlow(state.flow)
+    const idx = flow.blocks.findIndex((b) => b.id === id)
+    if (idx !== -1) {
+      flow.blocks.splice(idx + 1, 0, clone)
+    } else {
+      flow.blocks.push(clone)
+    }
+    const history = [...state._history, cloneFlow(state.flow)]
+    if (history.length > MAX_HISTORY) history.shift()
+    set({ flow, isDirty: true, _history: history, _future: [], selectedBlockId: clone.id })
+  },
+
+  toggleDisabled: (id) => {
+    const state = get()
+    const flow = {
+      ...state.flow,
+      blocks: updateBlockInTree(state.flow.blocks, id, (b) => ({
+        ...b,
+        params: { ...b.params, _disabled: !b.params._disabled }
+      }))
+    }
+    const history = [...state._history, cloneFlow(state.flow)]
+    if (history.length > MAX_HISTORY) history.shift()
+    set({ flow, isDirty: true, _history: history, _future: [] })
+  },
+
+  copyBlock: (id) => {
+    const state = get()
+    const block = findBlock(state.flow.blocks, id)
+    if (block) {
+      set({ _clipboard: JSON.parse(JSON.stringify(block)) })
+    }
+  },
+
+  pasteBlock: () => {
+    const state = get()
+    if (!state._clipboard) return
+    const clone: FlowBlock = JSON.parse(JSON.stringify(state._clipboard))
+    clone.id = `block_${crypto.randomUUID().slice(0, 8)}`
+    clone.label = `${clone.label}`
+    const reassignIds = (b: FlowBlock): void => {
+      b.id = `block_${crypto.randomUUID().slice(0, 8)}`
+      b.children?.forEach(reassignIds)
+      b.elseChildren?.forEach(reassignIds)
+    }
+    clone.children?.forEach(reassignIds)
+    clone.elseChildren?.forEach(reassignIds)
+    const flow = cloneFlow(state.flow)
+    flow.blocks.push(clone)
+    const history = [...state._history, cloneFlow(state.flow)]
+    if (history.length > MAX_HISTORY) history.shift()
+    set({ flow, isDirty: true, _history: history, _future: [], selectedBlockId: clone.id })
+  },
+
+  searchBlocks: (query) => {
+    const state = get()
+    const q = query.toLowerCase()
+    const results: FlowBlock[] = []
+    const search = (blocks: FlowBlock[]): void => {
+      for (const b of blocks) {
+        const match =
+          b.label.toLowerCase().includes(q) ||
+          b.type.toLowerCase().includes(q) ||
+          Object.values(b.params).some((v) => String(v).toLowerCase().includes(q))
+        if (match) results.push(b)
+        if (b.children) search(b.children)
+        if (b.elseChildren) search(b.elseChildren)
+      }
+    }
+    search(state.flow.blocks)
+    return results
   },
 
   undo: () => {
