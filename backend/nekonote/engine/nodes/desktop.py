@@ -63,17 +63,16 @@ async def desktop_hotkey(params: dict[str, Any], ctx: ExecutionContext) -> Any:
     import pyautogui
 
     keys_str = params.get("keys", "")
-    # Support both "ctrl,a" (comma-separated) and "ctrl+a" (plus-separated)
-    if "+" in keys_str and "," not in keys_str:
-        s = keys_str
-        literal_plus = s == "+" or s.endswith("++")
-        if literal_plus:
-            s = s[:-1]  # strip the trailing literal "+"
-        keys = [k.strip() for k in s.split("+") if k.strip()] if s else []
-        if literal_plus:
-            keys.append("+")
-    else:
+    # Canonical separator is comma: "ctrl,a", "shift,;", "win,r"
+    # Also support plus notation: "ctrl+a", "win+r"
+    # Disambiguation: if commas are present, always split by comma.
+    # Otherwise split by "+" but reassemble known modifier+key pairs.
+    if "," in keys_str:
         keys = [k.strip() for k in keys_str.split(",") if k.strip()]
+    elif "+" in keys_str:
+        keys = [k.strip() for k in keys_str.split("+") if k.strip()]
+    else:
+        keys = [keys_str.strip()] if keys_str.strip() else []
     if keys:
         await _run_sync(pyautogui.hotkey, *keys)
     return True

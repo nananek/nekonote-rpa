@@ -15,6 +15,18 @@ When the user asks you to create or modify an RPA scenario, **always use the MCP
 
 The editor updates in real-time as you call these tools. The user will see blocks appear/change instantly.
 
+### IMPORTANT: hotkey params format
+The `desktop.hotkey` block uses **comma-separated** key names in the `keys` parameter.
+Do NOT use `+` as separator — `+` itself is a valid key name.
+
+Examples:
+- `{"keys": "ctrl,a"}` — Select all
+- `{"keys": "ctrl,c"}` — Copy
+- `{"keys": "win,r"}` — Open Run dialog
+- `{"keys": "shift,;"}` — Type "+" on Japanese keyboard
+- `{"keys": "enter"}` — Press Enter
+- `{"keys": "alt,f4"}` — Close window
+
 ### Available block types
 - `browser.open`, `browser.navigate`, `browser.click`, `browser.type`, `browser.getText`, `browser.wait`, `browser.screenshot`, `browser.close`
 - `desktop.click`, `desktop.type`, `desktop.hotkey`, `desktop.screenshot`, `desktop.findImage`
