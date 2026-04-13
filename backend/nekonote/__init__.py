@@ -12,5 +12,9 @@ Synchronous API modules for scripting::
 
 from nekonote import browser  # noqa: F401
 from nekonote import desktop  # noqa: F401
+from nekonote import excel  # noqa: F401
+from nekonote import file  # noqa: F401
+from nekonote import http  # noqa: F401
 from nekonote import log  # noqa: F401
+from nekonote import text  # noqa: F401
 from nekonote import window  # noqa: F401

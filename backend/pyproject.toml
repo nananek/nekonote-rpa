@@ -20,6 +20,9 @@ automation = [
     "pywinauto>=0.6.9",
     "pillow>=12.2.0",
 ]
+data = [
+    "openpyxl>=3.1.0",
+]
 uitree = [
     "uitree @ git+https://github.com/nananek/uitree.git",
     "uiautomation>=2.0.29",
