@@ -6,6 +6,20 @@ export const api = {
   saveFile: (content: string, currentPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:saveFile', content, currentPath),
 
+  // Auto-update
+  updateCheck: (): Promise<unknown> => ipcRenderer.invoke('update:check'),
+  updateDownload: (): Promise<unknown> => ipcRenderer.invoke('update:download'),
+  updateInstall: (): void => ipcRenderer.send('update:install'),
+  onUpdateEvent: (callback: (event: string, payload?: unknown) => void): (() => void) => {
+    const channels = ['update:checking', 'update:available', 'update:none', 'update:progress', 'update:downloaded', 'update:error']
+    const handlers = channels.map((ch) => {
+      const h = (_: unknown, data: unknown): void => callback(ch, data)
+      ipcRenderer.on(ch, h)
+      return { ch, h }
+    })
+    return () => handlers.forEach(({ ch, h }) => ipcRenderer.removeListener(ch, h))
+  },
+
   // Record bar
   showRecordBar: (): void => ipcRenderer.send('recordbar:show'),
   hideRecordBar: (): void => ipcRenderer.send('recordbar:hide'),

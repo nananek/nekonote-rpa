@@ -31,6 +31,36 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
   const [isPaused, setIsPaused] = useState(false)
   const [recordMode, setRecordMode] = useState<'auto' | 'element' | 'coordinate' | 'image'>('auto')
   const [recordTarget, setRecordTarget] = useState<'desktop' | 'browser'>('desktop')
+  const [updateStatus, setUpdateStatus] = useState<{ state: string; version?: string; percent?: number } | null>(null)
+
+  // Auto-update event subscription
+  useEffect(() => {
+    const api = (window as any).api
+    if (!api?.onUpdateEvent) return
+    const unsub = api.onUpdateEvent((event: string, payload: any) => {
+      switch (event) {
+        case 'update:checking':
+          setUpdateStatus({ state: 'checking' })
+          break
+        case 'update:available':
+          setUpdateStatus({ state: 'downloading', version: payload?.version, percent: 0 })
+          break
+        case 'update:none':
+          setUpdateStatus(null)
+          break
+        case 'update:progress':
+          setUpdateStatus((s) => ({ ...(s ?? { state: 'downloading' }), percent: payload?.percent }))
+          break
+        case 'update:downloaded':
+          setUpdateStatus({ state: 'ready', version: payload?.version })
+          break
+        case 'update:error':
+          setUpdateStatus(null)
+          break
+      }
+    })
+    return unsub
+  }, [])
 
   // Track blocks recorded in the current session (for "discard" option)
   const recordedBlockIds = useRef<string[]>([])
@@ -216,6 +246,39 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
       ))}
 
       <div style={{ flex: 1 }} />
+
+      {updateStatus && (
+        <div
+          style={{
+            fontSize: 11,
+            padding: '4px 10px',
+            borderRadius: 4,
+            background: updateStatus.state === 'ready' ? '#7c3aed' : '#1e293b',
+            color: updateStatus.state === 'ready' ? '#fff' : '#94a3b8',
+            border: '1px solid #334155',
+            cursor: updateStatus.state === 'ready' ? 'pointer' : 'default',
+            fontWeight: updateStatus.state === 'ready' ? 600 : 400,
+          }}
+          onClick={() => {
+            if (updateStatus.state === 'ready') {
+              ;(window as any).api?.updateInstall?.()
+            }
+          }}
+          title={
+            updateStatus.state === 'checking'
+              ? 'アップデート確認中…'
+              : updateStatus.state === 'downloading'
+                ? `ダウンロード中 ${updateStatus.percent ?? 0}%`
+                : updateStatus.state === 'ready'
+                  ? `v${updateStatus.version} インストール準備完了 — クリックで再起動`
+                  : ''
+          }
+        >
+          {updateStatus.state === 'checking' && '⟳ 確認中'}
+          {updateStatus.state === 'downloading' && `↓ ${updateStatus.percent ?? 0}%`}
+          {updateStatus.state === 'ready' && `↑ v${updateStatus.version} 再起動`}
+        </div>
+      )}
 
       {!isRecording ? (
         <>

@@ -4,6 +4,7 @@ import { is } from '@electron-toolkit/utils'
 import { setupIpc } from './ipc'
 import { BackendManager } from './backendManager'
 import { setupTerminal, cleanupTerminal } from './terminal'
+import { setupAutoUpdate } from './updater'
 
 const backendManager = new BackendManager()
 
@@ -38,6 +39,7 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   setupIpc()
   setupTerminal()
+  setupAutoUpdate()
   await backendManager.start()
   createWindow()
 

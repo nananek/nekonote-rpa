@@ -39,5 +39,10 @@
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
     "shortcutName": "Nekonote"
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "nananek",
+    "repo": "nekonote-rpa"
   }
 }
