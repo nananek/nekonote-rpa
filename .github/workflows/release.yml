@@ -49,17 +49,12 @@ jobs:
           cd frontend
           npx electron-vite build
 
-      - name: Package installer
+      - name: Package and publish installer
         run: |
           cd frontend
-          npx electron-builder --win --config electron-builder.json
+          npx electron-builder --win --config electron-builder.json --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Release ──
-      - name: Upload release artifacts
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            frontend/release/*.exe
-          generate_release_notes: true
+      # electron-builder publishes the installer AND latest.yml (for auto-update)
+      # to the GitHub Release. No separate upload step needed.
