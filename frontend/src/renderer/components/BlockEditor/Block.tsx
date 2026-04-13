@@ -16,7 +16,15 @@ export function Block({ block, depth }: BlockProps): JSX.Element {
   const selectedBlockId = useFlowStore((s) => s.selectedBlockId)
   const selectBlock = useFlowStore((s) => s.selectBlock)
   const removeBlock = useFlowStore((s) => s.removeBlock)
+  const duplicateBlock = useFlowStore((s) => s.duplicateBlock)
+  const toggleDisabled = useFlowStore((s) => s.toggleDisabled)
+  const copyBlock = useFlowStore((s) => s.copyBlock)
   const activeNodeId = useExecutionStore((s) => s.activeNodeId)
+
+  const actionBtn: React.CSSProperties = {
+    background: 'none', border: 'none', color: '#475569',
+    cursor: 'pointer', fontSize: 12, padding: '0 3px', lineHeight: 1,
+  }
 
   const def = getNodeDef(block.type)
   const color = def?.color ?? '#666'
@@ -25,6 +33,7 @@ export function Block({ block, depth }: BlockProps): JSX.Element {
   const isActive = activeNodeId === block.id
   const isControl = block.type.startsWith('control.')
   const hasChildren = isControl && block.type !== 'control.wait'
+  const isDisabled = !!block.params._disabled
 
   const {
     attributes,
@@ -69,7 +78,8 @@ export function Block({ block, depth }: BlockProps): JSX.Element {
           boxShadow: isActive ? '0 0 12px rgba(34,197,94,0.3)' : 'none',
           marginBottom: 4,
           overflow: 'hidden',
-          transition: 'border-color 0.15s, box-shadow 0.15s'
+          transition: 'border-color 0.15s, box-shadow 0.15s',
+          opacity: isDisabled ? 0.4 : 1
         }}
       >
         {/* Color bar + drag handle */}
@@ -111,23 +121,18 @@ export function Block({ block, depth }: BlockProps): JSX.Element {
               {paramSummary()}
             </span>
             <div style={{ flex: 1 }} />
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                removeBlock(block.id)
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#475569',
-                cursor: 'pointer',
-                fontSize: 14,
-                padding: '0 4px',
-                lineHeight: 1
-              }}
-              title="Delete"
-            >
-              ×
+            {isDisabled && <span style={{ fontSize: 10, color: '#64748b', marginRight: 4 }}>SKIP</span>}
+            <button onClick={(e) => { e.stopPropagation(); copyBlock(block.id) }} style={actionBtn} title="Copy (Ctrl+C)">
+              {'C'}
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); duplicateBlock(block.id) }} style={actionBtn} title="Duplicate (Ctrl+D)">
+              {'D'}
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); toggleDisabled(block.id) }} style={actionBtn} title="Toggle disable (Ctrl+/)">
+              {isDisabled ? '!' : '/'}
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); removeBlock(block.id) }} style={{ ...actionBtn, color: '#ef4444' }} title="Delete">
+              {'×'}
             </button>
           </div>
 

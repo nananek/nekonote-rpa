@@ -153,6 +153,11 @@ class FlowExecutor:
         if not node:
             raise RuntimeError(f"Node not found: {node_id}")
 
+        # Skip disabled blocks
+        if node.params.get("_disabled"):
+            await self._emit_log(f"Skipped (disabled): {node.label or node.type}")
+            return await self._route_next(node_id, None)
+
         handler = get_handler(node.type)
         if not handler:
             raise RuntimeError(f"Unknown node type: {node.type}")
