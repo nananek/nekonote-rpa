@@ -28,22 +28,25 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
   const executionId = useExecutionStore((s) => s.executionId)
   const addBlock = useFlowStore((s) => s.addBlock)
   const [isRecording, setIsRecording] = useState(false)
+  const [isPaused, setIsPaused] = useState(false)
 
   // Listen for record events from backend
   useEffect(() => {
     const unsub = wsClient.subscribe((event: any) => {
       if (event.type === 'record.started') {
         setIsRecording(true)
-      } else if (event.type === 'record.completed') {
+        setIsPaused(false)
+      } else if (event.type === 'record.block') {
+        // Real-time: each block appears immediately as the user acts
+        const block = event.block as FlowBlock
+        if (block) addBlock(block)
+      } else if (event.type === 'record.paused') {
+        setIsPaused(true)
+      } else if (event.type === 'record.resumed') {
+        setIsPaused(false)
+      } else if (event.type === 'record.completed' || event.type === 'record.failed') {
         setIsRecording(false)
-        const blocks = event.blocks as FlowBlock[]
-        if (blocks?.length) {
-          for (const block of blocks) {
-            addBlock(block)
-          }
-        }
-      } else if (event.type === 'record.failed') {
-        setIsRecording(false)
+        setIsPaused(false)
       }
     })
     return unsub
@@ -61,6 +64,12 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
       } else if (e.ctrlKey && e.key === 's') {
         e.preventDefault()
         handleSave()
+      } else if (e.altKey && e.ctrlKey && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault()
+        if (isRecording) {
+          if (isPaused) wsClient.resumeRecording()
+          else wsClient.pauseRecording()
+        }
       }
     }
     window.addEventListener('keydown', handler)
@@ -177,19 +186,39 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
 
       {!isRecording ? (
         <button
-          onClick={() => wsClient.startRecording(30)}
+          onClick={() => wsClient.startRecording()}
           style={{ ...btnBase, background: '#a855f7', color: '#fff', border: 'none', fontWeight: 600 }}
-          title="Record desktop operations for 30 seconds"
+          title="操作記録を開始"
         >
-          Rec
+          ● 記録
         </button>
       ) : (
-        <button
-          onClick={() => wsClient.stopRecording()}
-          style={{ ...btnBase, background: '#ef4444', color: '#fff', border: 'none', fontWeight: 600, animation: 'pulse 1s infinite' }}
-        >
-          Stop Rec
-        </button>
+        <>
+          {!isPaused ? (
+            <button
+              onClick={() => wsClient.pauseRecording()}
+              style={{ ...btnBase, background: '#f59e0b', color: '#000', border: 'none', fontWeight: 600 }}
+              title="一時停止 (Alt+Ctrl+P)"
+            >
+              ‖ 一時停止
+            </button>
+          ) : (
+            <button
+              onClick={() => wsClient.resumeRecording()}
+              style={{ ...btnBase, background: '#22c55e', color: '#000', border: 'none', fontWeight: 600 }}
+              title="再開"
+            >
+              ▶ 再開
+            </button>
+          )}
+          <button
+            onClick={() => wsClient.stopRecording()}
+            style={{ ...btnBase, background: '#ef4444', color: '#fff', border: 'none', fontWeight: 600 }}
+            title="記録を終了してフローに反映"
+          >
+            ■ 完了
+          </button>
+        </>
       )}
 
       {!isRunning ? (
