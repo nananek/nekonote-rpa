@@ -17,7 +17,7 @@ nekonote = "nekonote.cli:main"
 automation = [
     "playwright>=1.40.0",
     "pyautogui>=0.9.54",
-    "pywinauto>=0.6.8",
+    "pywinauto>=0.6.9",
     "pillow>=10.0.0",
 ]
 uitree = [
