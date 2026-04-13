@@ -43,6 +43,11 @@ class TestProcessManagement:
 class TestUiTreeIntegration:
     """Tests for uitree-based UI element operations (mocked)."""
 
+    @pytest.fixture(autouse=True)
+    def _check_uitree(self):
+        pytest.importorskip("uitree")
+        pytest.importorskip("lxml")
+
     def _mock_uitree(self):
         """Create a mock UITree with a window containing buttons."""
         mock_element = MagicMock()
