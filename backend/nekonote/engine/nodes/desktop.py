@@ -63,7 +63,11 @@ async def desktop_hotkey(params: dict[str, Any], ctx: ExecutionContext) -> Any:
     import pyautogui
 
     keys_str = params.get("keys", "")
-    keys = [k.strip() for k in keys_str.split(",") if k.strip()]
+    # Support both "ctrl,a" (comma-separated) and "ctrl+a" (plus-separated)
+    if "+" in keys_str and "," not in keys_str:
+        keys = [k.strip() for k in keys_str.split("+") if k.strip()]
+    else:
+        keys = [k.strip() for k in keys_str.split(",") if k.strip()]
     if keys:
         await _run_sync(pyautogui.hotkey, *keys)
     return True
