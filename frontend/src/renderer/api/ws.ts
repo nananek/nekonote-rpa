@@ -109,8 +109,8 @@ class BackendClient {
     this.send({ type: 'stop', execution_id: executionId })
   }
 
-  startRecording(): void {
-    this.send({ type: 'record.start' })
+  startRecording(mode: 'auto' | 'element' | 'coordinate' | 'image' = 'auto'): void {
+    this.send({ type: 'record.start', mode })
   }
 
   stopRecording(): void {
@@ -123,6 +123,10 @@ class BackendClient {
 
   resumeRecording(): void {
     this.send({ type: 'record.resume' })
+  }
+
+  setRecordMode(mode: 'auto' | 'element' | 'coordinate' | 'image'): void {
+    this.send({ type: 'record.setMode', mode })
   }
 
   openPickerBrowser(url?: string): void {

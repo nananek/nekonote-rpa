@@ -35,6 +35,54 @@ def _require_page(action: str = ""):
     return _page
 
 
+async def _resolve_locator(page, selector: str, timeout: float):
+    """Find a locator for *selector*, auto-searching iframes recursively.
+
+    Returns a Playwright Locator that is guaranteed to match at least one
+    element, or raises TimeoutError after *timeout* ms.
+
+    Resolution order:
+    1. Top-level page
+    2. Each iframe's contentFrame (recursively)
+    """
+    # Try top frame first with a short timeout
+    top_locator = page.locator(selector)
+    try:
+        await top_locator.wait_for(state="attached", timeout=min(timeout, 500))
+        return top_locator
+    except Exception:
+        pass
+
+    async def search_frame(frame, depth: int = 0):
+        if depth > 5:
+            return None
+        try:
+            loc = frame.locator(selector)
+            count = await loc.count()
+            if count > 0:
+                return loc
+        except Exception:
+            pass
+        # Recurse into child frames
+        for child in frame.child_frames:
+            result = await search_frame(child, depth + 1)
+            if result is not None:
+                return result
+        return None
+
+    # Search all frames of the page
+    for frame in page.frames:
+        if frame == page.main_frame:
+            continue
+        result = await search_frame(frame)
+        if result is not None:
+            return result
+
+    # Last resort: wait on top-level with full timeout
+    await top_locator.wait_for(state="attached", timeout=timeout)
+    return top_locator
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -73,28 +121,33 @@ def navigate(url: str) -> str:
 
 
 def click(selector: str, *, timeout: float = 5000) -> None:
-    """Click the element matching *selector*."""
+    """Click the element matching *selector*.
+
+    Automatically searches inside iframes (including nested) if the
+    element is not found on the top frame.
+    """
     page = _require_page("browser.click")
 
     async def _click():
         try:
-            await page.click(selector, timeout=timeout)
+            locator = await _resolve_locator(page, selector, timeout)
+            await locator.first.click(timeout=timeout)
         except Exception as e:
             err_msg = str(e)
-            if "waiting for locator" in err_msg.lower() or "timeout" in err_msg.lower():
-                # Gather available elements for suggestion
+            if "waiting for" in err_msg.lower() or "timeout" in err_msg.lower():
                 similar = await _find_similar_selectors(page, selector)
                 ctx: dict[str, Any] = {
                     "selector": selector,
                     "page_url": page.url,
                     "page_title": await page.title(),
+                    "iframe_count": len([f for f in page.frames if f != page.main_frame]),
                 }
                 suggestion = ""
                 if similar:
                     ctx["similar_selectors"] = similar
                     suggestion = f"Similar selectors found: {', '.join(similar[:5])}"
                 raise ElementNotFoundError(
-                    f"Selector '{selector}' matched 0 elements on {page.url}",
+                    f"Selector '{selector}' matched 0 elements (searched {len(page.frames)} frames)",
                     action="browser.click",
                     context=ctx,
                     suggestion=suggestion,
@@ -105,20 +158,25 @@ def click(selector: str, *, timeout: float = 5000) -> None:
 
 
 def type(selector: str, text: str, *, clear: bool = True, timeout: float = 5000) -> None:
-    """Type *text* into the element matching *selector*."""
+    """Type *text* into the element matching *selector*.
+
+    Automatically searches inside iframes (including nested).
+    """
     page = _require_page("browser.type")
 
     async def _type():
         try:
+            locator = await _resolve_locator(page, selector, timeout)
+            first = locator.first
             if clear:
-                await page.fill(selector, text, timeout=timeout)
+                await first.fill(text, timeout=timeout)
             else:
-                await page.locator(selector).press_sequentially(text, timeout=timeout)
+                await first.press_sequentially(text, timeout=timeout)
         except Exception as e:
-            if "waiting for locator" in str(e).lower() or "timeout" in str(e).lower():
+            if "waiting for" in str(e).lower() or "timeout" in str(e).lower():
                 similar = await _find_similar_selectors(page, selector, kind="input")
                 raise ElementNotFoundError(
-                    f"Input '{selector}' not found on {page.url}",
+                    f"Input '{selector}' not found (searched {len(page.frames)} frames)",
                     action="browser.type",
                     context={
                         "selector": selector,
@@ -133,15 +191,20 @@ def type(selector: str, text: str, *, clear: bool = True, timeout: float = 5000)
 
 
 def get_text(selector: str, *, timeout: float = 5000) -> str:
-    """Return the text content of the element matching *selector*."""
+    """Return the text content of the element matching *selector*.
+
+    Automatically searches inside iframes (including nested).
+    """
     page = _require_page("browser.get_text")
 
     async def _get():
-        el = await page.query_selector(selector)
-        if not el:
+        try:
+            locator = await _resolve_locator(page, selector, timeout)
+            return await locator.first.text_content() or ""
+        except Exception:
             similar = await _find_similar_selectors(page, selector)
             raise ElementNotFoundError(
-                f"Selector '{selector}' not found on {page.url}",
+                f"Selector '{selector}' not found (searched {len(page.frames)} frames)",
                 action="browser.get_text",
                 context={
                     "selector": selector,
@@ -149,8 +212,7 @@ def get_text(selector: str, *, timeout: float = 5000) -> str:
                     "similar_selectors": similar,
                 },
                 suggestion=f"Similar: {', '.join(similar[:5])}" if similar else "",
-            )
-        return await el.text_content() or ""
+            ) from None
 
     return run_async(_get())
 
@@ -182,12 +244,12 @@ def get_html(selector: str) -> str:
 
 
 def wait(selector: str, *, timeout: float = 30000) -> None:
-    """Wait for *selector* to appear on the page."""
+    """Wait for *selector* to appear on the page (including iframes)."""
     page = _require_page("browser.wait")
 
     async def _wait():
         try:
-            await page.wait_for_selector(selector, timeout=timeout)
+            await _resolve_locator(page, selector, timeout)
         except Exception:
             raise TimeoutError(
                 f"Timed out after {timeout}ms waiting for '{selector}'",
@@ -457,7 +519,24 @@ def get_page_info() -> dict[str, Any]:
     }
     """
 
-    return run_async(page.evaluate(js))
+    async def _get_info():
+        info = await page.evaluate(js)
+        # Enrich with iframe info
+        info["frames"] = []
+        for frame in page.frames:
+            if frame == page.main_frame:
+                continue
+            try:
+                info["frames"].append({
+                    "url": frame.url,
+                    "name": frame.name,
+                    "parent": frame.parent_frame.url if frame.parent_frame else "",
+                })
+            except Exception:
+                pass
+        return info
+
+    return run_async(_get_info())
 
 
 def accept_dialog(prompt_text: str = "") -> None:

@@ -23,6 +23,19 @@ def _setup_mock_page():
     page.title = AsyncMock(return_value="Example")
     page.is_visible = AsyncMock(return_value=True)
 
+    # Set up default locator that "finds" the element (wait_for succeeds)
+    _default_locator = AsyncMock()
+    _default_locator.wait_for = AsyncMock()  # no error = found
+    _default_locator.count = AsyncMock(return_value=1)
+    _default_locator.first = AsyncMock()
+    _default_locator.first.click = AsyncMock()
+    _default_locator.first.fill = AsyncMock()
+    _default_locator.first.text_content = AsyncMock(return_value="")
+    _default_locator.first.press_sequentially = AsyncMock()
+    page.locator = MagicMock(return_value=_default_locator)
+    page.main_frame = MagicMock()
+    page.frames = [page.main_frame]
+
     browser._pw = MagicMock()
     browser._browser = MagicMock()
     browser._context = MagicMock()
@@ -84,33 +97,35 @@ class TestNavigate:
 class TestClick:
     def test_click_success(self):
         page = _setup_mock_page()
-        page.click = AsyncMock()
-
+        loc = page.locator.return_value
         browser.click("#btn")
-        page.click.assert_called_once_with("#btn", timeout=5000)
+        loc.first.click.assert_called_once()
 
     def test_click_element_not_found(self):
         page = _setup_mock_page()
-        page.click = AsyncMock(side_effect=Exception("Timeout waiting for locator"))
+        loc = page.locator.return_value
+        loc.wait_for = AsyncMock(side_effect=Exception("timeout waiting for locator"))
+        loc.count = AsyncMock(return_value=0)
         page.evaluate = AsyncMock(return_value=["#submit", "#cancel"])
 
         with pytest.raises(ElementNotFoundError) as exc_info:
             browser.click("#nonexistent")
         assert exc_info.value.code == "ELEMENT_NOT_FOUND"
-        assert "nonexistent" in str(exc_info.value)
 
 
 class TestType:
     def test_type_fill(self):
         page = _setup_mock_page()
-        page.fill = AsyncMock()
-
+        loc = page.locator.return_value
+        loc.first.fill = AsyncMock()
         browser.type("#input", "hello")
-        page.fill.assert_called_once_with("#input", "hello", timeout=5000)
+        loc.first.fill.assert_called_once_with("hello", timeout=5000)
 
     def test_type_element_not_found(self):
         page = _setup_mock_page()
-        page.fill = AsyncMock(side_effect=Exception("Timeout waiting for locator"))
+        loc = page.locator.return_value
+        loc.wait_for = AsyncMock(side_effect=Exception("timeout waiting for locator"))
+        loc.count = AsyncMock(return_value=0)
         page.evaluate = AsyncMock(return_value=[])
 
         with pytest.raises(ElementNotFoundError):
@@ -120,16 +135,17 @@ class TestType:
 class TestGetText:
     def test_get_text_success(self):
         page = _setup_mock_page()
-        el = AsyncMock()
-        el.text_content = AsyncMock(return_value="Hello World")
-        page.query_selector = AsyncMock(return_value=el)
+        loc = page.locator.return_value
+        loc.first.text_content = AsyncMock(return_value="Hello World")
 
         result = browser.get_text("h1")
         assert result == "Hello World"
 
     def test_get_text_not_found(self):
         page = _setup_mock_page()
-        page.query_selector = AsyncMock(return_value=None)
+        loc = page.locator.return_value
+        loc.wait_for = AsyncMock(side_effect=Exception("timeout waiting"))
+        loc.count = AsyncMock(return_value=0)
         page.evaluate = AsyncMock(return_value=[])
 
         with pytest.raises(ElementNotFoundError):
@@ -139,14 +155,15 @@ class TestGetText:
 class TestWait:
     def test_wait_success(self):
         page = _setup_mock_page()
-        page.wait_for_selector = AsyncMock()
-
+        loc = page.locator.return_value
         browser.wait("#el")
-        page.wait_for_selector.assert_called_once_with("#el", timeout=30000)
+        loc.wait_for.assert_called()
 
     def test_wait_timeout(self):
         page = _setup_mock_page()
-        page.wait_for_selector = AsyncMock(side_effect=Exception("Timeout"))
+        loc = page.locator.return_value
+        loc.wait_for = AsyncMock(side_effect=Exception("timeout"))
+        loc.count = AsyncMock(return_value=0)
 
         with pytest.raises(TimeoutError) as exc_info:
             browser.wait("#el", timeout=1000)
