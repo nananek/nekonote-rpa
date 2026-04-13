@@ -14,6 +14,27 @@ export const api = {
     const handler = (_: unknown, data: unknown): void => callback(data)
     ipcRenderer.on('backend:event', handler)
     return () => ipcRenderer.removeListener('backend:event', handler)
+  },
+
+  // Terminal
+  terminalSpawn: (opts?: { cmd?: string; cwd?: string }): Promise<boolean> =>
+    ipcRenderer.invoke('terminal:spawn', opts),
+  terminalInput: (data: string): void => {
+    ipcRenderer.send('terminal:input', data)
+  },
+  terminalResize: (cols: number, rows: number): void => {
+    ipcRenderer.send('terminal:resize', cols, rows)
+  },
+  terminalKill: (): Promise<boolean> => ipcRenderer.invoke('terminal:kill'),
+  onTerminalData: (callback: (data: string) => void): (() => void) => {
+    const handler = (_: unknown, data: string): void => callback(data)
+    ipcRenderer.on('terminal:data', handler)
+    return () => ipcRenderer.removeListener('terminal:data', handler)
+  },
+  onTerminalExit: (callback: (code: number) => void): (() => void) => {
+    const handler = (_: unknown, code: number): void => callback(code)
+    ipcRenderer.on('terminal:exit', handler)
+    return () => ipcRenderer.removeListener('terminal:exit', handler)
   }
 }
 
