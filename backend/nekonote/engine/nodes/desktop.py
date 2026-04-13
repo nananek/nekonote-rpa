@@ -65,7 +65,13 @@ async def desktop_hotkey(params: dict[str, Any], ctx: ExecutionContext) -> Any:
     keys_str = params.get("keys", "")
     # Support both "ctrl,a" (comma-separated) and "ctrl+a" (plus-separated)
     if "+" in keys_str and "," not in keys_str:
-        keys = [k.strip() for k in keys_str.split("+") if k.strip()]
+        s = keys_str
+        literal_plus = s == "+" or s.endswith("++")
+        if literal_plus:
+            s = s[:-1]  # strip the trailing literal "+"
+        keys = [k.strip() for k in s.split("+") if k.strip()] if s else []
+        if literal_plus:
+            keys.append("+")
     else:
         keys = [k.strip() for k in keys_str.split(",") if k.strip()]
     if keys:
