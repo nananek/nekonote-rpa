@@ -7,7 +7,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.0.0",
-    "websockets>=13.0",
+    "websockets>=16.0",
 ]
 
 [project.scripts]
