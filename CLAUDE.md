@@ -2,12 +2,51 @@
 
 Windows RPA toolkit. Electron (frontend) + Python (backend).
 
+## Important: MCP tools for editing scenarios
+
+When the user asks you to create or modify an RPA scenario, **always use the MCP tools first** to edit the flow that is currently open in the nekonote visual editor. Do NOT just write a .py file — edit the visual flow so the user can see the changes in the UI.
+
+### Workflow for scenario editing
+1. `get_current_flow()` — read the current flow open in the editor
+2. `add_block(block_type, label, params)` — add blocks to build the scenario
+3. `update_block_params(block_id, params)` — adjust existing block parameters
+4. `remove_block(block_id)` — remove blocks that aren't needed
+5. `update_flow(flow_json)` — replace the entire flow if doing large restructuring
+
+The editor updates in real-time as you call these tools. The user will see blocks appear/change instantly.
+
+### IMPORTANT: hotkey params format
+The `desktop.hotkey` block uses **comma-separated** key names in the `keys` parameter.
+Do NOT use `+` as separator — `+` itself is a valid key name.
+
+Examples:
+- `{"keys": "ctrl,a"}` — Select all
+- `{"keys": "ctrl,c"}` — Copy
+- `{"keys": "win,r"}` — Open Run dialog
+- `{"keys": "shift,;"}` — Type "+" on Japanese keyboard
+- `{"keys": "enter"}` — Press Enter
+- `{"keys": "alt,f4"}` — Close window
+
+### Available block types
+- `browser.open`, `browser.navigate`, `browser.click`, `browser.type`, `browser.getText`, `browser.wait`, `browser.screenshot`, `browser.close`
+- `desktop.click`, `desktop.type`, `desktop.hotkey`, `desktop.screenshot`, `desktop.findImage`
+- `control.if`, `control.loop`, `control.forEach`, `control.tryCatch`, `control.wait`
+- `data.setVariable`, `data.log`, `data.comment`
+
+### Example: user says "Googleを開いてスクリーンショットを撮って"
+```
+add_block("browser.open", "Open Browser", '{}')
+add_block("browser.navigate", "Go to Google", '{"url": "https://www.google.com"}')
+add_block("browser.screenshot", "Screenshot", '{"path": "google.png"}')
+add_block("browser.close", "Close", '{}')
+```
+
 ## Architecture
 
 - `backend/nekonote/` — Python scripting API + execution engine
 - `frontend/` — Electron + React + TypeScript visual editor
 
-## Writing RPA scripts
+## Writing RPA scripts (Python API)
 
 ```bash
 # Run a script

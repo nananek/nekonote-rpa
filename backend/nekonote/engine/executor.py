@@ -95,6 +95,15 @@ class FlowExecutor:
         )
 
         try:
+            # Countdown before execution starts (give user time to switch windows)
+            has_desktop = any(n.type.startswith("desktop.") for n in self.flow.nodes)
+            if has_desktop:
+                for i in range(3, 0, -1):
+                    if self._cancelled:
+                        raise asyncio.CancelledError()
+                    await self._emit_log(f"Starting in {i}...")
+                    await asyncio.sleep(1)
+
             # Find start nodes (no incoming edges)
             start_nodes = [
                 n.id for n in self.flow.nodes if n.id not in self._has_incoming

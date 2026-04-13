@@ -6,7 +6,8 @@
     "output": "release"
   },
   "files": [
-    "out/**/*"
+    "out/**/*",
+    "node_modules/node-pty/**/*"
   ],
   "extraResources": [
     {

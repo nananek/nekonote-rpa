@@ -3,6 +3,7 @@ import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { setupIpc } from './ipc'
 import { BackendManager } from './backendManager'
+import { setupTerminal, cleanupTerminal } from './terminal'
 
 const backendManager = new BackendManager()
 
@@ -36,6 +37,7 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   setupIpc()
+  setupTerminal()
   await backendManager.start()
   createWindow()
 
@@ -45,6 +47,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  cleanupTerminal()
   backendManager.stop()
   app.quit()
 })

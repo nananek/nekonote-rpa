@@ -10,20 +10,7 @@ function createEmptyFlow(): Flow {
     name: 'New Flow',
     description: '',
     variables: [],
-    blocks: [
-      {
-        id: 'block_1',
-        type: 'data.log',
-        label: 'Hello',
-        params: { message: 'Hello from Nekonote!' }
-      },
-      {
-        id: 'block_2',
-        type: 'data.log',
-        label: 'Done',
-        params: { message: 'Flow complete.' }
-      }
-    ]
+    blocks: []
   }
 }
 
