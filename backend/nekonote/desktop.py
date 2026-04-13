@@ -241,3 +241,190 @@ def set_clipboard(text: str) -> None:
         input=text.encode("utf-16-le"),
         check=True,
     )
+
+
+# ---------------------------------------------------------------------------
+# Process management
+# ---------------------------------------------------------------------------
+
+
+def start_process(executable: str, *, args: list[str] | None = None) -> int:
+    """Start a process and return its PID."""
+    import subprocess
+
+    cmd = [executable] + (args or [])
+    proc = subprocess.Popen(cmd)
+    return proc.pid
+
+
+def kill_process(*, name: str = "", pid: int = 0) -> None:
+    """Kill a process by name or PID."""
+    import subprocess
+
+    if pid:
+        subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+    elif name:
+        subprocess.run(["taskkill", "/IM", name, "/F"], capture_output=True)
+
+
+# ---------------------------------------------------------------------------
+# UI element operations (uitree integration) — Issue #5
+# ---------------------------------------------------------------------------
+
+
+def get_ui_tree(*, title: str = "", handle: int = 0, depth: int = 4) -> str:
+    """Dump the UI element tree for a window as XML.
+
+    Uses uitree (https://github.com/nananek/uitree) for XPath-capable
+    UI Automation tree inspection.
+    """
+    from uitree import UITree
+    from lxml import etree
+
+    tree = UITree(depth=depth + 1)
+
+    if title or handle:
+        if title:
+            xpath = f'//*[contains(@name, "{title}")]'
+        else:
+            xpath = f'//*[@handle="{handle}"]'
+        elements = tree.xpath(xpath)
+        if not elements:
+            from nekonote.errors import WindowNotFoundError
+
+            raise WindowNotFoundError(
+                f"No window matching title='{title}' handle={handle}",
+                action="desktop.get_ui_tree",
+            )
+        return etree.tostring(elements[0]._element, pretty_print=True, encoding="unicode")
+    return tree.dumpxml(pretty_print=True, encoding="unicode")
+
+
+def find_elements(*, title: str, xpath: str, depth: int = 5) -> list[dict[str, str]]:
+    """Find UI elements by XPath within a window.
+
+    Returns list of dicts with tag, name, automation_id, class, handle.
+    """
+    from uitree import UITree
+
+    tree = UITree(depth=depth + 1)
+    # First find the window
+    win_elems = tree.xpath(f'//*[contains(@name, "{title}")]')
+    if not win_elems:
+        from nekonote.errors import WindowNotFoundError
+
+        raise WindowNotFoundError(
+            f"Window '{title}' not found",
+            action="desktop.find_elements",
+        )
+
+    results = win_elems[0].xpath(xpath)
+    return [{"tag": e.tag, **e.attrib} for e in results]
+
+
+def find_element(*, title: str, xpath: str, depth: int = 5) -> dict[str, str]:
+    """Find a single UI element. Raises XPathNoMatchError if not found."""
+    results = find_elements(title=title, xpath=xpath, depth=depth)
+    if not results:
+        from nekonote.errors import XPathNoMatchError
+
+        raise XPathNoMatchError(
+            f"XPath '{xpath}' matched 0 elements in window '{title}'",
+            action="desktop.find_element",
+            context={"xpath": xpath, "window_title": title},
+            suggestion="Use desktop.get_ui_tree() to inspect the element structure.",
+        )
+    return results[0]
+
+
+def click_element(*, title: str, xpath: str, depth: int = 5) -> None:
+    """Click a UI element found by XPath."""
+    from uitree import UITree
+
+    tree = UITree(depth=depth + 1)
+    win_elems = tree.xpath(f'//*[contains(@name, "{title}")]')
+    if not win_elems:
+        from nekonote.errors import WindowNotFoundError
+
+        raise WindowNotFoundError(f"Window '{title}' not found", action="desktop.click_element")
+
+    results = win_elems[0].xpath(xpath)
+    if not results:
+        from nekonote.errors import XPathNoMatchError
+
+        raise XPathNoMatchError(
+            f"XPath '{xpath}' matched 0 elements",
+            action="desktop.click_element",
+            context={"xpath": xpath, "window_title": title},
+        )
+
+    ctrl = results[0].control
+    if ctrl is None:
+        from nekonote.errors import XPathNoMatchError
+
+        raise XPathNoMatchError(
+            f"Element found but no control handle available",
+            action="desktop.click_element",
+        )
+    ctrl.Click()
+
+
+def type_element(*, title: str, xpath: str, text: str, depth: int = 5) -> None:
+    """Type text into a UI element found by XPath."""
+    from uitree import UITree
+
+    tree = UITree(depth=depth + 1)
+    win_elems = tree.xpath(f'//*[contains(@name, "{title}")]')
+    if not win_elems:
+        from nekonote.errors import WindowNotFoundError
+
+        raise WindowNotFoundError(f"Window '{title}' not found", action="desktop.type_element")
+
+    results = win_elems[0].xpath(xpath)
+    if not results:
+        from nekonote.errors import XPathNoMatchError
+
+        raise XPathNoMatchError(
+            f"XPath '{xpath}' matched 0 elements",
+            action="desktop.type_element",
+        )
+
+    ctrl = results[0].control
+    if ctrl is None:
+        raise RuntimeError("Element found but no control handle available")
+
+    try:
+        ctrl.SendKeys(text)
+    except Exception:
+        # Fallback: set value pattern
+        try:
+            ctrl.GetValuePattern().SetValue(text)
+        except Exception:
+            raise RuntimeError(f"Cannot type into element: {xpath}")
+
+
+def get_element_value(*, title: str, xpath: str, depth: int = 5) -> str:
+    """Get the value/text of a UI element found by XPath."""
+    from uitree import UITree
+
+    tree = UITree(depth=depth + 1)
+    win_elems = tree.xpath(f'//*[contains(@name, "{title}")]')
+    if not win_elems:
+        from nekonote.errors import WindowNotFoundError
+
+        raise WindowNotFoundError(f"Window '{title}' not found", action="desktop.get_element_value")
+
+    results = win_elems[0].xpath(xpath)
+    if not results:
+        from nekonote.errors import XPathNoMatchError
+
+        raise XPathNoMatchError(f"XPath '{xpath}' matched 0 elements", action="desktop.get_element_value")
+
+    ctrl = results[0].control
+    if ctrl is None:
+        return results[0].attrib.get("name", "")
+
+    try:
+        return ctrl.GetValuePattern().Value
+    except Exception:
+        return ctrl.Name if hasattr(ctrl, "Name") else results[0].attrib.get("name", "")
