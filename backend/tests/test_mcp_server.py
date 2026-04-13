@@ -1,5 +1,9 @@
 """Tests for nekonote.mcp_server."""
 
+import pytest
+
+pytest.importorskip("mcp")
+
 from unittest.mock import patch, MagicMock
 
 from nekonote.mcp_server import mcp

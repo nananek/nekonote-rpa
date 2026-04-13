@@ -26,7 +26,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           cd backend
-          pip install -e ".[automation,data,uitree,dev]"
+          pip install -e ".[automation,data,uitree,mcp,dev]"
 
       - name: Run pytest
         run: |

@@ -5,6 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytest.importorskip("mcp")
+
 from nekonote.mcp_server import (
     get_current_flow,
     update_flow,
