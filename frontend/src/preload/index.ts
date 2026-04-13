@@ -16,6 +16,19 @@ export const api = {
     return () => ipcRenderer.removeListener('backend:event', handler)
   },
 
+  // Flow sync (for MCP integration)
+  flowSyncToFile: (flowJson: string): void => {
+    ipcRenderer.send('flow:syncToFile', flowJson)
+  },
+  flowStartWatching: (): Promise<boolean> => ipcRenderer.invoke('flow:startWatching'),
+  flowStopWatching: (): Promise<boolean> => ipcRenderer.invoke('flow:stopWatching'),
+  flowGetSharedPath: (): Promise<string> => ipcRenderer.invoke('flow:getSharedPath'),
+  onFlowExternalUpdate: (callback: (flowJson: string) => void): (() => void) => {
+    const handler = (_: unknown, data: string): void => callback(data)
+    ipcRenderer.on('flow:externalUpdate', handler)
+    return () => ipcRenderer.removeListener('flow:externalUpdate', handler)
+  },
+
   // Terminal
   terminalSpawn: (opts?: { cmd?: string; cwd?: string }): Promise<boolean> =>
     ipcRenderer.invoke('terminal:spawn', opts),

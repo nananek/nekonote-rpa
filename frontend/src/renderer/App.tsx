@@ -24,6 +24,9 @@ export default function App(): JSX.Element {
   const [popupContainer, setPopupContainer] = useState<HTMLDivElement | null>(null)
   const isDragging = useRef(false)
 
+  const flow = useFlowStore((s) => s.flow)
+  const setFlow = useFlowStore((s) => s.setFlow)
+
   useEffect(() => {
     wsClient.connect()
     const unsub = wsClient.subscribe(handleEvent)
@@ -32,6 +35,37 @@ export default function App(): JSX.Element {
       wsClient.disconnect()
     }
   }, [handleEvent])
+
+  // Sync flow to shared file for MCP access
+  const externalUpdateRef = useRef(false)
+  useEffect(() => {
+    if (externalUpdateRef.current) {
+      externalUpdateRef.current = false
+      return
+    }
+    try {
+      ;(window as any).api.flowSyncToFile(JSON.stringify(flow, null, 2))
+    } catch { /* ignore */ }
+  }, [flow])
+
+  // Watch for external flow changes (from MCP/Claude Code)
+  useEffect(() => {
+    ;(window as any).api.flowStartWatching()
+    const unsub = (window as any).api.onFlowExternalUpdate((json: string) => {
+      try {
+        const updated = JSON.parse(json)
+        // Only update if actually different
+        if (JSON.stringify(updated) !== JSON.stringify(flow)) {
+          externalUpdateRef.current = true
+          setFlow(updated)
+        }
+      } catch { /* ignore bad json */ }
+    })
+    return () => {
+      unsub()
+      ;(window as any).api.flowStopWatching()
+    }
+  }, []) // intentionally empty deps - run once
 
   // Drag resize handler
   const onDragStart = useCallback((e: React.MouseEvent) => {

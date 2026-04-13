@@ -17,10 +17,16 @@ class TestMcpTools:
         assert "run_script" in names
         assert "check_script" in names
         assert "list_actions" in names
+        # Flow editing tools
+        assert "get_current_flow" in names
+        assert "update_flow" in names
+        assert "add_block" in names
+        assert "remove_block" in names
+        assert "update_block_params" in names
 
     def test_tool_count(self):
         tools = mcp._tool_manager.list_tools()
-        assert len(tools) == 8
+        assert len(tools) == 13
 
 
 class TestRunCli:
