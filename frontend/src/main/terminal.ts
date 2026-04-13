@@ -5,13 +5,53 @@
  * Includes Auto-Y: automatically approves Claude Code permission prompts.
  */
 
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, app } from 'electron'
 import { join, resolve } from 'path'
 import * as pty from 'node-pty'
 import * as os from 'os'
-import { existsSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync, copyFileSync } from 'fs'
 
 let ptyProcess: pty.IPty | null = null
+
+/** Create a temp workspace with CLAUDE.md and .mcp.json so Claude Code picks them up. */
+function ensureWorkspace(): string {
+  const tmpBase = join(os.tmpdir(), 'nekonote-workspace')
+  if (!existsSync(tmpBase)) mkdirSync(tmpBase, { recursive: true })
+
+  // Find engine path (bundled backend)
+  const resourcesPath = join(app.getAppPath(), '..', 'engine')
+  const enginePython = existsSync(join(resourcesPath, 'nekonote-engine.exe'))
+    ? join(resourcesPath, 'nekonote-engine.exe')
+    : 'python'
+
+  // Write CLAUDE.md from bundled app or generate minimal one
+  const claudeMdSrc = join(app.getAppPath(), '..', '..', 'CLAUDE.md')
+  const claudeMdDst = join(tmpBase, 'CLAUDE.md')
+  if (existsSync(claudeMdSrc)) {
+    copyFileSync(claudeMdSrc, claudeMdDst)
+  } else {
+    // Generate from embedded content
+    writeFileSync(claudeMdDst, CLAUDE_MD_CONTENT, 'utf-8')
+  }
+
+  // Write .mcp.json pointing to the backend
+  const mcpDir = join(tmpBase, '.claude')
+  if (!existsSync(mcpDir)) mkdirSync(mcpDir, { recursive: true })
+
+  const mcpJson = {
+    mcpServers: {
+      nekonote: {
+        type: 'stdio',
+        command: enginePython === 'python' ? 'python' : enginePython,
+        args: enginePython === 'python' ? ['-m', 'nekonote.mcp_server'] : ['--mcp'],
+        env: { PYTHONDONTWRITEBYTECODE: '1' }
+      }
+    }
+  }
+  writeFileSync(join(tmpBase, '.mcp.json'), JSON.stringify(mcpJson, null, 2), 'utf-8')
+
+  return tmpBase
+}
 
 // ---------------------------------------------------------------------------
 // Auto-Y state
@@ -96,13 +136,8 @@ export function setupTerminal(): void {
       ptyProcess = null
     }
 
-    // Determine project root
-    let projectRoot = args?.cwd || process.cwd()
-    const candidate = resolve(projectRoot, '..')
-    if (existsSync(join(candidate, 'CLAUDE.md'))) {
-      projectRoot = candidate
-    }
-    const cwd = projectRoot
+    // Set up temp workspace with CLAUDE.md and .mcp.json for Claude Code
+    const cwd = ensureWorkspace()
 
     // Always launch Claude Code via shell
     const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash'
@@ -189,3 +224,39 @@ export function cleanupTerminal(): void {
     ptyProcess = null
   }
 }
+
+// Embedded CLAUDE.md — full API reference so Claude Code knows everything at startup
+const CLAUDE_MD_CONTENT = `# nekonote
+
+Windows RPA toolkit. Use MCP tools to edit the open scenario.
+
+## MCP tools (use these first!)
+- get_current_flow() / update_flow(flow_json) / add_block(type, label, params) / remove_block(id) / update_block_params(id, params)
+- inspect_windows(filter) / inspect_ui_tree(title, depth, xpath) / inspect_browser() / inspect_screenshot(output)
+- run_script(script_path) / check_script(script_path) / list_actions()
+
+## Block types
+browser.open, browser.navigate, browser.click, browser.type, browser.getText, browser.wait, browser.screenshot, browser.close
+desktop.click, desktop.type, desktop.hotkey, desktop.screenshot, desktop.findImage
+control.if, control.loop, control.forEach, control.tryCatch, control.wait
+data.setVariable, data.log, data.comment, subflow.call
+
+## hotkey format: comma-separated keys
+{"keys": "ctrl,a"}, {"keys": "win,r"}, {"keys": "enter"}
+
+## Python API (from nekonote import browser, desktop, ...)
+All sync, no async needed. 21 modules: ai, browser, config, db, desktop, dialog, excel, file, gsheets, history, http, log, mail, ocr, pdf, recorder, retry, scheduler, teams, text, window.
+
+## Key functions
+browser: open/navigate/click/type/get_text/wait/screenshot/execute_js/get_table/close
+desktop: click(x,y)/type(text)/hotkey(*keys)/press(key)/screenshot/find_image/click_element(title,xpath)
+window: find(title)/launch(exe)/activate/maximize/close
+file: copy/move/delete/read_text/write_text/list_files/zip/unzip
+excel: read/write/read_csv/write_csv/read_cell/write_cell
+http: get/post/put/patch/delete/download -> Response (.json()/.text())
+db: connect(driver,database) -> conn.query(sql)/execute(sql)/close()
+text: replace/split/join/trim/regex_match/regex_replace/now()/today()/add_time()
+dialog: show_message/confirm/input/select/open_file/save_file
+mail: send(to,subject,body)/receive(imap_server,username,password)
+log: info/warning/error/debug
+`
