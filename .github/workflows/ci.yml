@@ -53,3 +53,69 @@ jobs:
         run: |
           cd frontend
           npx electron-vite build
+
+  # ── Build installer (master push only) ──
+  build:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: lint-and-check
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      # ── Backend ──
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -e ".[automation]"
+          pip install pyinstaller playwright
+          python -m playwright install chromium
+
+      - name: Build backend with PyInstaller
+        run: |
+          cd backend
+          python build.py
+
+      # ── Frontend ──
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npx electron-vite build
+
+      - name: Package installer
+        run: |
+          cd frontend
+          npx electron-builder --win --config electron-builder.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Upload ──
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nekonote-installer
+          path: frontend/release/*.exe
+          retention-days: 30
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nekonote-portable
+          path: frontend/release/*.zip
+          retention-days: 30
+          if-no-files-found: ignore
