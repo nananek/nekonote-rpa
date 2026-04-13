@@ -70,11 +70,18 @@ class StdioServer:
                 self._executions[exec_id].cancel()
 
         elif msg_type == "record.start":
-            duration = msg.get("duration", 10)
-            asyncio.create_task(self._run_record(duration))
+            asyncio.create_task(self._run_record())
 
         elif msg_type == "record.stop":
             self._record_stop = True
+
+        elif msg_type == "record.pause":
+            self._record_paused = True
+            await self.send({"type": "record.paused"})
+
+        elif msg_type == "record.resume":
+            self._record_paused = False
+            await self.send({"type": "record.resumed"})
 
         elif msg_type == "picker.openBrowser":
             asyncio.create_task(self._open_picker_browser(msg))
@@ -83,64 +90,121 @@ class StdioServer:
             asyncio.create_task(self._run_picker())
 
     _record_stop = False
+    _record_paused = False
 
-    async def _run_record(self, duration: float) -> None:
-        """Record desktop operations and send resulting blocks."""
+    async def _run_record(self) -> None:
+        """Record desktop operations in real-time, sending each block immediately."""
         self._record_stop = False
-        await self.send({"type": "record.started", "duration": duration})
+        self._record_paused = False
+        await self.send({"type": "record.started"})
+
         try:
-            from nekonote.recorder import _events_to_blocks
             import pynput.mouse
             import pynput.keyboard
             import time
+            import uuid
 
-            events = []
-            start_time = time.time()
-
-            def on_click(x, y, button, pressed):
-                if not pressed:
-                    return
-                if self._record_stop or time.time() - start_time > duration:
-                    return False
-                events.append({"time": time.time() - start_time, "type": "click", "x": int(x), "y": int(y), "button": str(button)})
-
+            loop = asyncio.get_running_loop()
+            last_event_time = [time.time()]
             typed_buf: list[str] = []
-            last_t = [start_time]
+            typed_start = [0.0]
 
-            def flush():
+            def mkid() -> str:
+                return f"block_{uuid.uuid4().hex[:8]}"
+
+            def emit_block(block: dict) -> None:
+                """Schedule sending a block from the event-loop thread."""
+                asyncio.run_coroutine_threadsafe(
+                    self.send({"type": "record.block", "block": block}),
+                    loop
+                )
+
+            def maybe_wait_block() -> None:
+                """Emit a control.wait block if the gap is large enough."""
+                now = time.time()
+                gap = now - last_event_time[0]
+                if gap > 0.5:
+                    emit_block({
+                        "id": mkid(),
+                        "type": "control.wait",
+                        "label": f"Wait {gap:.1f}s",
+                        "params": {"seconds": round(gap, 1)},
+                    })
+                last_event_time[0] = now
+
+            def flush_typed() -> None:
+                """Flush buffered text input as a desktop.type block."""
                 if typed_buf:
-                    events.append({"time": last_t[0] - start_time, "type": "type", "text": "".join(typed_buf)})
+                    text = "".join(typed_buf)
+                    emit_block({
+                        "id": mkid(),
+                        "type": "desktop.type",
+                        "label": f"Type: {text[:20]}",
+                        "params": {"text": text},
+                    })
                     typed_buf.clear()
 
-            def on_key(key):
-                if self._record_stop or time.time() - start_time > duration:
-                    flush()
+            def on_click(x, y, button, pressed):
+                if self._record_stop:
+                    flush_typed()
                     return False
+                if self._record_paused or not pressed:
+                    return
+                flush_typed()
+                maybe_wait_block()
+                btn = str(button).replace("Button.", "")
+                block_type = "desktop.rightClick" if btn == "right" else "desktop.click"
+                label = f"{'Right-click' if btn == 'right' else 'Click'} ({int(x)}, {int(y)})"
+                emit_block({
+                    "id": mkid(),
+                    "type": block_type,
+                    "label": label,
+                    "params": {"x": int(x), "y": int(y)},
+                })
+
+            def on_key(key):
+                if self._record_stop:
+                    flush_typed()
+                    return False
+                if self._record_paused:
+                    return
                 try:
                     c = key.char
                     if c:
+                        if not typed_buf:
+                            typed_start[0] = time.time()
                         typed_buf.append(c)
-                        last_t[0] = time.time()
+                        last_event_time[0] = time.time()
                         return
                 except AttributeError:
                     pass
-                flush()
+                # Special key — flush buffered text first
+                flush_typed()
+                maybe_wait_block()
                 kn = key.name if hasattr(key, "name") else str(key)
-                events.append({"time": time.time() - start_time, "type": "hotkey", "key": kn})
+                emit_block({
+                    "id": mkid(),
+                    "type": "desktop.press",
+                    "label": f"Press: {kn}",
+                    "params": {"key": kn},
+                })
 
             ml = pynput.mouse.Listener(on_click=on_click)
             kl = pynput.keyboard.Listener(on_press=on_key)
             ml.start()
             kl.start()
 
-            # Wait (in thread to not block event loop)
-            await asyncio.to_thread(time.sleep, duration)
+            # Wait until stop is requested, polling in a thread
+            def wait_for_stop():
+                while not self._record_stop:
+                    time.sleep(0.1)
+
+            await asyncio.to_thread(wait_for_stop)
             ml.stop()
             kl.stop()
-            flush()
+            flush_typed()
 
-            blocks = _events_to_blocks(events)
-            await self.send({"type": "record.completed", "blocks": blocks})
+            await self.send({"type": "record.completed"})
         except Exception as e:
             await self.send({"type": "record.failed", "error": str(e)})
 
