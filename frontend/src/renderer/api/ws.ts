@@ -109,8 +109,12 @@ class BackendClient {
     this.send({ type: 'stop', execution_id: executionId })
   }
 
-  startRecording(mode: 'auto' | 'element' | 'coordinate' | 'image' = 'auto'): void {
-    this.send({ type: 'record.start', mode })
+  startRecording(
+    mode: 'auto' | 'element' | 'coordinate' | 'image' = 'auto',
+    target: 'desktop' | 'browser' = 'desktop',
+    url: string = ''
+  ): void {
+    this.send({ type: 'record.start', mode, target, url })
   }
 
   stopRecording(): void {

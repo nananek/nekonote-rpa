@@ -6,6 +6,15 @@ export const api = {
   saveFile: (content: string, currentPath?: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:saveFile', content, currentPath),
 
+  // Record bar
+  showRecordBar: (): void => ipcRenderer.send('recordbar:show'),
+  hideRecordBar: (): void => ipcRenderer.send('recordbar:hide'),
+  onRecordBarAction: (callback: (action: string) => void): (() => void) => {
+    const handler = (_: unknown, action: string): void => callback(action)
+    ipcRenderer.on('recordbar:action', handler)
+    return () => ipcRenderer.removeListener('recordbar:action', handler)
+  },
+
   // Backend communication via stdio
   sendToBackend: (msg: unknown): void => {
     ipcRenderer.send('backend:send', msg)

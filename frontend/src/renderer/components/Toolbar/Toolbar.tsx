@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useFlowStore } from '../../stores/flowStore'
 import { useExecutionStore } from '../../stores/executionStore'
 import { wsClient } from '../../api/ws'
@@ -30,6 +30,10 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
   const [isRecording, setIsRecording] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
   const [recordMode, setRecordMode] = useState<'auto' | 'element' | 'coordinate' | 'image'>('auto')
+  const [recordTarget, setRecordTarget] = useState<'desktop' | 'browser'>('desktop')
+
+  // Track blocks recorded in the current session (for "discard" option)
+  const recordedBlockIds = useRef<string[]>([])
 
   // Listen for record events from backend
   useEffect(() => {
@@ -37,10 +41,14 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
       if (event.type === 'record.started') {
         setIsRecording(true)
         setIsPaused(false)
+        recordedBlockIds.current = []
+        ;(window as any).api?.showRecordBar?.()
       } else if (event.type === 'record.block') {
-        // Real-time: each block appears immediately as the user acts
         const block = event.block as FlowBlock
-        if (block) addBlock(block)
+        if (block) {
+          addBlock(block)
+          recordedBlockIds.current.push(block.id)
+        }
       } else if (event.type === 'record.paused') {
         setIsPaused(true)
       } else if (event.type === 'record.resumed') {
@@ -48,10 +56,34 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
       } else if (event.type === 'record.completed' || event.type === 'record.failed') {
         setIsRecording(false)
         setIsPaused(false)
+        ;(window as any).api?.hideRecordBar?.()
+        const count = recordedBlockIds.current.length
+        if (count > 0) {
+          const keep = confirm(`${count}個のブロックを記録しました。\n\nOK: フローに反映\nキャンセル: 記録を破棄`)
+          if (!keep) {
+            const store = useFlowStore.getState()
+            for (const id of recordedBlockIds.current) {
+              store.removeBlock(id)
+            }
+          }
+        }
+        recordedBlockIds.current = []
       }
     })
     return unsub
   }, [addBlock])
+
+  // Listen for record bar button actions (from floating window)
+  useEffect(() => {
+    const api = (window as any).api
+    if (!api?.onRecordBarAction) return
+    const unsub = api.onRecordBarAction((action: string) => {
+      if (action === 'pause') wsClient.pauseRecording()
+      else if (action === 'resume') wsClient.resumeRecording()
+      else if (action === 'stop') wsClient.stopRecording()
+    })
+    return unsub
+  }, [])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -188,22 +220,44 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
       {!isRecording ? (
         <>
           <select
-            value={recordMode}
-            onChange={(e) => setRecordMode(e.target.value as typeof recordMode)}
+            value={recordTarget}
+            onChange={(e) => setRecordTarget(e.target.value as typeof recordTarget)}
             style={{
               padding: '4px 8px', fontSize: 12,
               background: '#1e293b', color: '#e2e8f0',
               border: '1px solid #334155', borderRadius: 4, cursor: 'pointer',
             }}
-            title="認識モード"
+            title="記録対象"
           >
-            <option value="auto">自動</option>
-            <option value="element">要素認識</option>
-            <option value="coordinate">座標</option>
-            <option value="image">画像</option>
+            <option value="desktop">デスクトップ</option>
+            <option value="browser">ブラウザ</option>
           </select>
+          {recordTarget === 'desktop' && (
+            <select
+              value={recordMode}
+              onChange={(e) => setRecordMode(e.target.value as typeof recordMode)}
+              style={{
+                padding: '4px 8px', fontSize: 12,
+                background: '#1e293b', color: '#e2e8f0',
+                border: '1px solid #334155', borderRadius: 4, cursor: 'pointer',
+              }}
+              title="認識モード"
+            >
+              <option value="auto">自動</option>
+              <option value="element">要素認識</option>
+              <option value="coordinate">座標</option>
+              <option value="image">画像</option>
+            </select>
+          )}
           <button
-            onClick={() => wsClient.startRecording(recordMode)}
+            onClick={() => {
+              if (recordTarget === 'browser') {
+                const url = prompt('記録を開始するURLを入力 (空欄でabout:blank)') || ''
+                wsClient.startRecording(recordMode, 'browser', url)
+              } else {
+                wsClient.startRecording(recordMode, 'desktop')
+              }
+            }}
             style={{ ...btnBase, background: '#a855f7', color: '#fff', border: 'none', fontWeight: 600 }}
             title="操作記録を開始"
           >
