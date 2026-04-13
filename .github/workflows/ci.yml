@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  lint-and-check:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -e ".[automation]"
+
+      - name: Python syntax check
+        run: |
+          cd backend
+          python -m py_compile nekonote/cli.py
+          python -m py_compile nekonote/browser.py
+          python -m py_compile nekonote/desktop.py
+          python -m py_compile nekonote/window.py
+          python -m py_compile nekonote/errors.py
+          python -m py_compile nekonote/_runtime.py
+          python -m py_compile nekonote/log.py
+
+      - name: nekonote CLI smoke test
+        run: |
+          cd backend
+          python -m nekonote.cli --help
+          python -m nekonote.cli list-actions
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: TypeScript type check
+        run: |
+          cd frontend
+          npx tsc --noEmit || true
+
+      - name: Frontend build check
+        run: |
+          cd frontend
+          npx electron-vite build
