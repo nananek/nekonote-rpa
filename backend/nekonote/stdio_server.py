@@ -70,7 +70,8 @@ class StdioServer:
                 self._executions[exec_id].cancel()
 
         elif msg_type == "record.start":
-            asyncio.create_task(self._run_record())
+            mode = msg.get("mode", "auto")  # auto | element | coordinate | image
+            asyncio.create_task(self._run_record(mode))
 
         elif msg_type == "record.stop":
             self._record_stop = True
@@ -83,6 +84,10 @@ class StdioServer:
             self._record_paused = False
             await self.send({"type": "record.resumed"})
 
+        elif msg_type == "record.setMode":
+            self._record_mode = msg.get("mode", "auto")
+            await self.send({"type": "record.modeChanged", "mode": self._record_mode})
+
         elif msg_type == "picker.openBrowser":
             asyncio.create_task(self._open_picker_browser(msg))
 
@@ -91,12 +96,21 @@ class StdioServer:
 
     _record_stop = False
     _record_paused = False
+    _record_mode = "auto"  # auto | element | coordinate | image
 
-    async def _run_record(self) -> None:
-        """Record desktop operations in real-time, sending each block immediately."""
+    async def _run_record(self, mode: str = "auto") -> None:
+        """Record desktop operations in real-time, sending each block immediately.
+
+        Recognition modes:
+        - 'auto': try UI element (uitree), fall back to coordinates
+        - 'element': UI element only (XPath)
+        - 'coordinate': coordinates only (x, y)
+        - 'image': take screenshot on each click for image-match later
+        """
         self._record_stop = False
         self._record_paused = False
-        await self.send({"type": "record.started"})
+        self._record_mode = mode
+        await self.send({"type": "record.started", "mode": mode})
 
         try:
             import pynput.mouse
@@ -144,6 +158,68 @@ class StdioServer:
                     })
                     typed_buf.clear()
 
+            def try_element_capture(x: int, y: int) -> dict | None:
+                """Try to identify the UI element at (x, y) via uitree.
+
+                Returns a block dict with XPath, or None if element can't be detected.
+                """
+                try:
+                    import uiautomation as auto
+                    ctrl = auto.ControlFromPoint(x, y)
+                    if ctrl is None:
+                        return None
+
+                    # Walk up to find the owning window
+                    win_ctrl = ctrl
+                    while win_ctrl and not isinstance(win_ctrl, auto.WindowControl):
+                        win_ctrl = win_ctrl.GetParentControl()
+                    if win_ctrl is None:
+                        return None
+
+                    win_title = win_ctrl.Name or ""
+                    if not win_title:
+                        return None
+
+                    # Build a simple XPath by tag + name or automation_id
+                    tag = type(ctrl).__name__
+                    name = ctrl.Name
+                    aid = ctrl.AutomationId
+                    if aid:
+                        xpath = f'.//{tag}[@automation_id="{aid}"]'
+                    elif name:
+                        xpath = f'.//{tag}[@name="{name}"]'
+                    else:
+                        return None
+
+                    return {
+                        "id": mkid(),
+                        "type": "desktop.clickElement",
+                        "label": f"Click: {name or aid or tag}",
+                        "params": {"title": win_title, "xpath": xpath},
+                    }
+                except Exception:
+                    return None
+
+            def try_image_capture(x: int, y: int) -> dict | None:
+                """Capture a small region around the click for image matching."""
+                try:
+                    import pyautogui
+                    import os
+                    import tempfile
+                    # 60x60 region centered on click
+                    rx, ry = max(0, x - 30), max(0, y - 30)
+                    img = pyautogui.screenshot(region=(rx, ry, 60, 60))
+                    path = os.path.join(tempfile.gettempdir(), f"nk_rec_{mkid()}.png")
+                    img.save(path)
+                    return {
+                        "id": mkid(),
+                        "type": "desktop.click",
+                        "label": f"Click (image)",
+                        "params": {"image": path, "confidence": 0.8},
+                    }
+                except Exception:
+                    return None
+
             def on_click(x, y, button, pressed):
                 if self._record_stop:
                     flush_typed()
@@ -153,14 +229,28 @@ class StdioServer:
                 flush_typed()
                 maybe_wait_block()
                 btn = str(button).replace("Button.", "")
-                block_type = "desktop.rightClick" if btn == "right" else "desktop.click"
-                label = f"{'Right-click' if btn == 'right' else 'Click'} ({int(x)}, {int(y)})"
-                emit_block({
-                    "id": mkid(),
-                    "type": block_type,
-                    "label": label,
-                    "params": {"x": int(x), "y": int(y)},
-                })
+                mode = self._record_mode
+
+                block: dict | None = None
+
+                if btn != "right" and mode in ("auto", "element"):
+                    block = try_element_capture(int(x), int(y))
+
+                if block is None and mode == "image" and btn != "right":
+                    block = try_image_capture(int(x), int(y))
+
+                if block is None:
+                    # Fall back to coordinates
+                    block_type = "desktop.rightClick" if btn == "right" else "desktop.click"
+                    label = f"{'Right-click' if btn == 'right' else 'Click'} ({int(x)}, {int(y)})"
+                    block = {
+                        "id": mkid(),
+                        "type": block_type,
+                        "label": label,
+                        "params": {"x": int(x), "y": int(y)},
+                    }
+
+                emit_block(block)
 
             def on_key(key):
                 if self._record_stop:

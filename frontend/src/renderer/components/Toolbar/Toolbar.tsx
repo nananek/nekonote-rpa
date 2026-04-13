@@ -29,6 +29,7 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
   const addBlock = useFlowStore((s) => s.addBlock)
   const [isRecording, setIsRecording] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  const [recordMode, setRecordMode] = useState<'auto' | 'element' | 'coordinate' | 'image'>('auto')
 
   // Listen for record events from backend
   useEffect(() => {
@@ -185,15 +186,51 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
       <div style={{ flex: 1 }} />
 
       {!isRecording ? (
-        <button
-          onClick={() => wsClient.startRecording()}
-          style={{ ...btnBase, background: '#a855f7', color: '#fff', border: 'none', fontWeight: 600 }}
-          title="操作記録を開始"
-        >
-          ● 記録
-        </button>
+        <>
+          <select
+            value={recordMode}
+            onChange={(e) => setRecordMode(e.target.value as typeof recordMode)}
+            style={{
+              padding: '4px 8px', fontSize: 12,
+              background: '#1e293b', color: '#e2e8f0',
+              border: '1px solid #334155', borderRadius: 4, cursor: 'pointer',
+            }}
+            title="認識モード"
+          >
+            <option value="auto">自動</option>
+            <option value="element">要素認識</option>
+            <option value="coordinate">座標</option>
+            <option value="image">画像</option>
+          </select>
+          <button
+            onClick={() => wsClient.startRecording(recordMode)}
+            style={{ ...btnBase, background: '#a855f7', color: '#fff', border: 'none', fontWeight: 600 }}
+            title="操作記録を開始"
+          >
+            ● 記録
+          </button>
+        </>
       ) : (
         <>
+          <select
+            value={recordMode}
+            onChange={(e) => {
+              const next = e.target.value as typeof recordMode
+              setRecordMode(next)
+              wsClient.setRecordMode(next)
+            }}
+            style={{
+              padding: '4px 8px', fontSize: 12,
+              background: '#1e293b', color: '#e2e8f0',
+              border: '1px solid #334155', borderRadius: 4, cursor: 'pointer',
+            }}
+            title="認識モード"
+          >
+            <option value="auto">自動</option>
+            <option value="element">要素認識</option>
+            <option value="coordinate">座標</option>
+            <option value="image">画像</option>
+          </select>
           {!isPaused ? (
             <button
               onClick={() => wsClient.pauseRecording()}
