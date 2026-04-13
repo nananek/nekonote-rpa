@@ -460,6 +460,32 @@ def get_page_info() -> dict[str, Any]:
     return run_async(page.evaluate(js))
 
 
+def accept_dialog(prompt_text: str = "") -> None:
+    """Accept the next dialog (alert, confirm, prompt)."""
+    page = _require_page("browser.accept_dialog")
+
+    async def _accept():
+        async def handler(dialog):
+            await dialog.accept(prompt_text)
+
+        page.once("dialog", handler)
+
+    run_async(_accept())
+
+
+def dismiss_dialog() -> None:
+    """Dismiss the next dialog."""
+    page = _require_page("browser.dismiss_dialog")
+
+    async def _dismiss():
+        async def handler(dialog):
+            await dialog.dismiss()
+
+        page.once("dialog", handler)
+
+    run_async(_dismiss())
+
+
 def close() -> None:
     """Close the browser."""
     run_async(_async_close())
