@@ -18,7 +18,7 @@ export default function App(): JSX.Element {
   const selectedBlockId = useFlowStore((s) => s.selectedBlockId)
   const [viewMode, setViewMode] = useState<ViewMode>('visual')
   const [bottomTab, setBottomTab] = useState<BottomTab>('terminal')
-  const [bottomHeight, setBottomHeight] = useState(320)
+  const [bottomHeight, setBottomHeight] = useState(480)
   const [isPopped, setIsPopped] = useState(false)
   const popupRef = useRef<Window | null>(null)
   const [popupContainer, setPopupContainer] = useState<HTMLDivElement | null>(null)

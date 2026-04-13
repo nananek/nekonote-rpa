@@ -1,12 +1,2 @@
 {
-  "mcpServers": {
-    "nekonote": {
-      "command": "python",
-      "args": ["-m", "nekonote.mcp_server"],
-      "cwd": "backend",
-      "env": {
-        "PYTHONDONTWRITEBYTECODE": "1"
-      }
-    }
-  }
 }
