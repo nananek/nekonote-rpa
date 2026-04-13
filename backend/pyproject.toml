@@ -22,7 +22,7 @@ automation = [
 ]
 uitree = [
     "uitree @ git+https://github.com/nananek/uitree.git",
-    "uiautomation>=2.0.0",
+    "uiautomation>=2.0.29",
     "lxml>=4.9.0",
 ]
 
