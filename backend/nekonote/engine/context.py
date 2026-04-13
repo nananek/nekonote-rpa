@@ -35,12 +35,41 @@ class ExecutionContext:
     def __init__(self, variables: dict[str, Any] | None = None):
         self.variables: dict[str, Any] = variables or {}
         self.cancelled = False
+        self._secrets: set[str] = set()  # variable names that should be masked
+        self._types: dict[str, str] = {}  # variable name -> type hint
 
-    def set(self, name: str, value: Any) -> None:
+    def set(self, name: str, value: Any, *, secret: bool = False, type_hint: str = "") -> None:
         self.variables[name] = value
+        if secret:
+            self._secrets.add(name)
+        if type_hint:
+            self._types[name] = type_hint
 
     def get(self, name: str, default: Any = None) -> Any:
         return self.variables.get(name, default)
+
+    def is_secret(self, name: str) -> bool:
+        return name in self._secrets
+
+    def get_type(self, name: str) -> str:
+        if name in self._types:
+            return self._types[name]
+        val = self.variables.get(name)
+        if val is None:
+            return "null"
+        return type(val).__name__
+
+    def get_visible_variables(self) -> dict[str, Any]:
+        """Return variables for display, masking secrets."""
+        result = {}
+        for k, v in self.variables.items():
+            if k.startswith("_"):
+                continue
+            if k in self._secrets:
+                result[k] = "****"
+            else:
+                result[k] = v
+        return result
 
     def evaluate(self, value: Any) -> Any:
         """Evaluate template expressions like {{ variables.x }} in a value."""
