@@ -33,6 +33,12 @@ class FlowExecutor:
         self._cancelled = False
         self.step_delay = step_delay  # seconds between steps (0 = fast)
 
+        # Debug support
+        self.breakpoints: set[str] = set()  # node IDs
+        self._paused = False
+        self._step_mode = False  # step-by-step execution
+        self._resume_event = asyncio.Event()
+
         # Build lookup structures
         self._nodes: dict[str, FlowNode] = {n.id: n for n in flow.nodes}
         # adjacency: source_id -> list of (target_id, sourceHandle)
@@ -51,6 +57,28 @@ class FlowExecutor:
     def cancel(self) -> None:
         self._cancelled = True
         self.ctx.cancelled = True
+        self._resume_event.set()  # unblock if paused
+
+    def set_breakpoint(self, node_id: str) -> None:
+        self.breakpoints.add(node_id)
+
+    def remove_breakpoint(self, node_id: str) -> None:
+        self.breakpoints.discard(node_id)
+
+    def step(self) -> None:
+        """Execute one step then pause again."""
+        self._step_mode = True
+        self._resume_event.set()
+
+    def resume(self) -> None:
+        """Continue execution (exit step mode)."""
+        self._step_mode = False
+        self._paused = False
+        self._resume_event.set()
+
+    def pause(self) -> None:
+        """Pause at the next node."""
+        self._step_mode = True
 
     async def _cleanup(self) -> None:
         """Clean up resources like browser instances."""
@@ -157,6 +185,20 @@ class FlowExecutor:
         if node.params.get("_disabled"):
             await self._emit_log(f"Skipped (disabled): {node.label or node.type}")
             return await self._route_next(node_id, None)
+
+        # Breakpoint / step-mode pause
+        if node_id in self.breakpoints or self._step_mode:
+            self._paused = True
+            self._resume_event.clear()
+            await self._emit({
+                "type": "debug.paused",
+                "execution_id": self.execution_id,
+                "node_id": node_id,
+                "variables": {k: _safe_serialize(v) for k, v in self.ctx.variables.items() if not k.startswith("_")},
+            })
+            await self._resume_event.wait()
+            if self._cancelled:
+                raise asyncio.CancelledError()
 
         handler = get_handler(node.type)
         if not handler:
