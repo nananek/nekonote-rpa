@@ -23,7 +23,7 @@ automation = [
 uitree = [
     "uitree @ git+https://github.com/nananek/uitree.git",
     "uiautomation>=2.0.0",
-    "lxml>=4.9.0",
+    "lxml>=6.0.4",
 ]
 
 [build-system]
