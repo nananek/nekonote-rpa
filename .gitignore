@@ -17,6 +17,9 @@ backend/dist/
 Thumbs.db
 Desktop.ini
 
+# Claude Code local settings
+.claude/settings.local.json
+
 # Env
 .env
 *.tgz
