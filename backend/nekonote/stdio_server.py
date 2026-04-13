@@ -71,7 +71,9 @@ class StdioServer:
 
         elif msg_type == "record.start":
             mode = msg.get("mode", "auto")  # auto | element | coordinate | image
-            asyncio.create_task(self._run_record(mode))
+            target = msg.get("target", "desktop")  # desktop | browser
+            url = msg.get("url", "")
+            asyncio.create_task(self._run_record(mode, target=target, url=url))
 
         elif msg_type == "record.stop":
             self._record_stop = True
@@ -98,19 +100,23 @@ class StdioServer:
     _record_paused = False
     _record_mode = "auto"  # auto | element | coordinate | image
 
-    async def _run_record(self, mode: str = "auto") -> None:
-        """Record desktop operations in real-time, sending each block immediately.
+    async def _run_record(self, mode: str = "auto", *, target: str = "desktop", url: str = "") -> None:
+        """Record operations in real-time, sending each block immediately.
 
-        Recognition modes:
-        - 'auto': try UI element (uitree), fall back to coordinates
-        - 'element': UI element only (XPath)
-        - 'coordinate': coordinates only (x, y)
-        - 'image': take screenshot on each click for image-match later
+        Args:
+            mode: Recognition mode (auto/element/coordinate/image). Desktop only.
+            target: 'desktop' (pynput) or 'browser' (Playwright CDP).
+            url: Initial URL for browser recording.
         """
         self._record_stop = False
         self._record_paused = False
         self._record_mode = mode
-        await self.send({"type": "record.started", "mode": mode})
+
+        if target == "browser":
+            await self._run_record_browser(url=url)
+            return
+
+        await self.send({"type": "record.started", "mode": mode, "target": target})
 
         try:
             import pynput.mouse
@@ -293,6 +299,155 @@ class StdioServer:
             ml.stop()
             kl.stop()
             flush_typed()
+
+            await self.send({"type": "record.completed"})
+        except Exception as e:
+            await self.send({"type": "record.failed", "error": str(e)})
+
+    async def _run_record_browser(self, *, url: str = "") -> None:
+        """Record browser operations via Playwright JS injection."""
+        import uuid as _uuid
+        import time as _time
+
+        await self.send({"type": "record.started", "target": "browser"})
+
+        try:
+            from playwright.async_api import async_playwright
+
+            pw = await async_playwright().start()
+            browser_inst = await pw.chromium.launch(headless=False)
+            ctx = await browser_inst.new_context()
+            page = await ctx.new_page()
+
+            # Emit browser.open + navigate blocks
+            await self.send({"type": "record.block", "block": {
+                "id": f"block_{_uuid.uuid4().hex[:8]}",
+                "type": "browser.open",
+                "label": "Open Browser",
+                "params": {"browser_type": "chromium", "headless": False},
+            }})
+
+            if url:
+                await self.send({"type": "record.block", "block": {
+                    "id": f"block_{_uuid.uuid4().hex[:8]}",
+                    "type": "browser.navigate",
+                    "label": f"Navigate: {url}",
+                    "params": {"url": url},
+                }})
+                await page.goto(url)
+
+            # Expose a binding so page JS can call back to Python
+            last_event_time = [_time.time()]
+
+            def maybe_wait_block() -> None:
+                now = _time.time()
+                gap = now - last_event_time[0]
+                if gap > 0.5:
+                    asyncio.run_coroutine_threadsafe(
+                        self.send({"type": "record.block", "block": {
+                            "id": f"block_{_uuid.uuid4().hex[:8]}",
+                            "type": "control.wait",
+                            "label": f"Wait {gap:.1f}s",
+                            "params": {"seconds": round(gap, 1)},
+                        }}),
+                        asyncio.get_running_loop()
+                    )
+                last_event_time[0] = now
+
+            async def handle_browser_event(_src, payload: dict):
+                if self._record_paused:
+                    return
+                maybe_wait_block()
+                etype = payload.get("type")
+                selector = payload.get("selector", "")
+                if etype == "click":
+                    await self.send({"type": "record.block", "block": {
+                        "id": f"block_{_uuid.uuid4().hex[:8]}",
+                        "type": "browser.click",
+                        "label": f"Click: {payload.get('text', selector)[:40]}",
+                        "params": {"selector": selector},
+                    }})
+                elif etype == "input":
+                    await self.send({"type": "record.block", "block": {
+                        "id": f"block_{_uuid.uuid4().hex[:8]}",
+                        "type": "browser.type",
+                        "label": f"Type: {payload.get('value', '')[:20]}",
+                        "params": {"selector": selector, "text": payload.get("value", "")},
+                    }})
+                elif etype == "navigate":
+                    await self.send({"type": "record.block", "block": {
+                        "id": f"block_{_uuid.uuid4().hex[:8]}",
+                        "type": "browser.navigate",
+                        "label": f"Navigate: {payload.get('url', '')}",
+                        "params": {"url": payload.get("url", "")},
+                    }})
+
+            await ctx.expose_binding("_nekonote_record", handle_browser_event)
+
+            # Inject recorder script into every page
+            recorder_js = r"""
+            () => {
+                function selectorFor(el) {
+                    if (el.id) return '#' + el.id;
+                    if (el.name) return el.tagName.toLowerCase() + '[name="' + el.name + '"]';
+                    if (el.getAttribute('data-testid')) return '[data-testid="' + el.getAttribute('data-testid') + '"]';
+                    // Path-based fallback
+                    const parts = [];
+                    let cur = el;
+                    while (cur && cur.nodeType === 1 && parts.length < 5) {
+                        let part = cur.tagName.toLowerCase();
+                        if (cur.className && typeof cur.className === 'string') {
+                            part += '.' + cur.className.split(/\s+/).filter(Boolean)[0];
+                        }
+                        parts.unshift(part);
+                        cur = cur.parentElement;
+                    }
+                    return parts.join(' > ');
+                }
+                document.addEventListener('click', (e) => {
+                    if (window._nekonote_record) {
+                        window._nekonote_record({
+                            type: 'click',
+                            selector: selectorFor(e.target),
+                            text: (e.target.textContent || '').trim().substring(0, 50),
+                        });
+                    }
+                }, true);
+                document.addEventListener('change', (e) => {
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+                        if (window._nekonote_record) {
+                            window._nekonote_record({
+                                type: 'input',
+                                selector: selectorFor(e.target),
+                                value: e.target.value || '',
+                            });
+                        }
+                    }
+                }, true);
+            }
+            """
+            await ctx.add_init_script(recorder_js)
+
+            # Also inject into the current page
+            await page.evaluate(recorder_js)
+
+            # Capture navigations
+            def on_frame_nav(frame):
+                if frame == page.main_frame and frame.url and frame.url != "about:blank":
+                    asyncio.run_coroutine_threadsafe(
+                        handle_browser_event(None, {"type": "navigate", "url": frame.url}),
+                        asyncio.get_running_loop()
+                    )
+
+            page.on("framenavigated", on_frame_nav)
+
+            # Wait for stop
+            while not self._record_stop:
+                await asyncio.sleep(0.1)
+
+            await ctx.close()
+            await browser_inst.close()
+            await pw.stop()
 
             await self.send({"type": "record.completed"})
         except Exception as e:
