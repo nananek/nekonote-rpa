@@ -25,12 +25,13 @@ EventCallback = Callable[[dict[str, Any]], Awaitable[None]]
 class FlowExecutor:
     """Interprets a Flow by walking its graph and dispatching to node handlers."""
 
-    def __init__(self, flow: Flow, on_event: EventCallback | None = None):
+    def __init__(self, flow: Flow, on_event: EventCallback | None = None, step_delay: float = 0.0):
         self.flow = flow
         self.on_event = on_event or self._noop
         self.ctx = ExecutionContext()
         self.execution_id = str(uuid.uuid4())
         self._cancelled = False
+        self.step_delay = step_delay  # seconds between steps (0 = fast)
 
         # Build lookup structures
         self._nodes: dict[str, FlowNode] = {n.id: n for n in flow.nodes}
@@ -143,6 +144,10 @@ class FlowExecutor:
     async def _execute_node(self, node_id: str) -> Any:
         if self._cancelled:
             raise asyncio.CancelledError()
+
+        # Step delay for slow/normal execution modes
+        if self.step_delay > 0:
+            await asyncio.sleep(self.step_delay)
 
         node = self._nodes.get(node_id)
         if not node:
