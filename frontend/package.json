@@ -1,7 +1,12 @@
 {
   "name": "nekonote",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Nekonote RPA Tool",
+  "author": "nananek",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nananek/nekonote-rpa.git"
+  },
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
