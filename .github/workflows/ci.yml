@@ -26,18 +26,12 @@ jobs:
       - name: Install backend dependencies
         run: |
           cd backend
-          pip install -e ".[automation]"
+          pip install -e ".[automation,dev]"
 
-      - name: Python syntax check
+      - name: Run pytest
         run: |
           cd backend
-          python -m py_compile nekonote/cli.py
-          python -m py_compile nekonote/browser.py
-          python -m py_compile nekonote/desktop.py
-          python -m py_compile nekonote/window.py
-          python -m py_compile nekonote/errors.py
-          python -m py_compile nekonote/_runtime.py
-          python -m py_compile nekonote/log.py
+          python -m pytest tests/ -v --tb=short
 
       - name: nekonote CLI smoke test
         run: |
