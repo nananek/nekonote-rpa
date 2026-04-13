@@ -1,6 +1,6 @@
 import { ipcMain, dialog, BrowserWindow, app } from 'electron'
-import { readFile, writeFile, watch } from 'fs/promises'
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
+import { readFile, writeFile } from 'fs/promises'
+import { existsSync, mkdirSync, writeFileSync, readFileSync, statSync } from 'fs'
 import { join } from 'path'
 
 /** Path to the shared flow file that MCP server can read/write */
@@ -10,7 +10,9 @@ function getSharedFlowPath(): string {
   return join(dir, 'current_flow.json')
 }
 
-let fileWatchAbort: AbortController | null = null
+let pollInterval: ReturnType<typeof setInterval> | null = null
+let lastMtime = 0
+let lastContent = ''
 
 export function setupIpc(): void {
   // Expose shared flow path to renderer
@@ -20,48 +22,55 @@ export function setupIpc(): void {
   ipcMain.on('flow:syncToFile', (_event, flowJson: string) => {
     try {
       writeFileSync(getSharedFlowPath(), flowJson, 'utf-8')
+      // Update tracking so we don't treat our own write as an external change
+      lastContent = flowJson
+      try { lastMtime = statSync(getSharedFlowPath()).mtimeMs } catch { /* */ }
     } catch {
       // ignore write errors
     }
   })
 
-  // Watch shared flow file for external changes (from MCP)
+  // Watch shared flow file for external changes (from MCP) — polling for Windows reliability
   ipcMain.handle('flow:startWatching', async () => {
-    if (fileWatchAbort) fileWatchAbort.abort()
-    fileWatchAbort = new AbortController()
+    if (pollInterval) clearInterval(pollInterval)
     const flowPath = getSharedFlowPath()
 
+    // Initialize baseline
     try {
-      const watcher = watch(flowPath, { signal: fileWatchAbort.signal })
-      ;(async () => {
-        try {
-          for await (const event of watcher) {
-            if (event.eventType === 'change') {
-              try {
-                const content = readFileSync(flowPath, 'utf-8')
-                const win = BrowserWindow.getAllWindows()[0]
-                if (win) {
-                  win.webContents.send('flow:externalUpdate', content)
-                }
-              } catch {
-                // file may be mid-write
-              }
+      const stat = statSync(flowPath)
+      lastMtime = stat.mtimeMs
+      lastContent = readFileSync(flowPath, 'utf-8')
+    } catch {
+      lastMtime = 0
+      lastContent = ''
+    }
+
+    pollInterval = setInterval(() => {
+      try {
+        const stat = statSync(flowPath)
+        if (stat.mtimeMs !== lastMtime) {
+          lastMtime = stat.mtimeMs
+          const content = readFileSync(flowPath, 'utf-8')
+          if (content !== lastContent) {
+            lastContent = content
+            const win = BrowserWindow.getAllWindows()[0]
+            if (win) {
+              win.webContents.send('flow:externalUpdate', content)
             }
           }
-        } catch {
-          // watcher aborted or errored
         }
-      })()
-    } catch {
-      // watch setup failed
-    }
+      } catch {
+        // file may not exist yet
+      }
+    }, 500) // poll every 500ms
+
     return true
   })
 
   ipcMain.handle('flow:stopWatching', () => {
-    if (fileWatchAbort) {
-      fileWatchAbort.abort()
-      fileWatchAbort = null
+    if (pollInterval) {
+      clearInterval(pollInterval)
+      pollInterval = null
     }
     return true
   })

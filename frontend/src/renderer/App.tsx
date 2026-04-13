@@ -49,13 +49,15 @@ export default function App(): JSX.Element {
   }, [flow])
 
   // Watch for external flow changes (from MCP/Claude Code)
+  const flowRef = useRef(flow)
+  flowRef.current = flow
+
   useEffect(() => {
     ;(window as any).api.flowStartWatching()
     const unsub = (window as any).api.onFlowExternalUpdate((json: string) => {
       try {
         const updated = JSON.parse(json)
-        // Only update if actually different
-        if (JSON.stringify(updated) !== JSON.stringify(flow)) {
+        if (JSON.stringify(updated) !== JSON.stringify(flowRef.current)) {
           externalUpdateRef.current = true
           setFlow(updated)
         }
@@ -65,7 +67,7 @@ export default function App(): JSX.Element {
       unsub()
       ;(window as any).api.flowStopWatching()
     }
-  }, []) // intentionally empty deps - run once
+  }, [setFlow])
 
   // Drag resize handler
   const onDragStart = useCallback((e: React.MouseEvent) => {
