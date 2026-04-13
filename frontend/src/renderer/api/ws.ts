@@ -109,6 +109,14 @@ class BackendClient {
     this.send({ type: 'stop', execution_id: executionId })
   }
 
+  startRecording(duration: number = 10): void {
+    this.send({ type: 'record.start', duration })
+  }
+
+  stopRecording(): void {
+    this.send({ type: 'record.stop' })
+  }
+
   openPickerBrowser(url?: string): void {
     this.send({ type: 'picker.openBrowser', url: url || 'about:blank' })
   }

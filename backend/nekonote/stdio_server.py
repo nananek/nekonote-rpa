@@ -69,11 +69,80 @@ class StdioServer:
             if exec_id and exec_id in self._executions:
                 self._executions[exec_id].cancel()
 
+        elif msg_type == "record.start":
+            duration = msg.get("duration", 10)
+            asyncio.create_task(self._run_record(duration))
+
+        elif msg_type == "record.stop":
+            self._record_stop = True
+
         elif msg_type == "picker.openBrowser":
             asyncio.create_task(self._open_picker_browser(msg))
 
         elif msg_type == "picker.start":
             asyncio.create_task(self._run_picker())
+
+    _record_stop = False
+
+    async def _run_record(self, duration: float) -> None:
+        """Record desktop operations and send resulting blocks."""
+        self._record_stop = False
+        await self.send({"type": "record.started", "duration": duration})
+        try:
+            from nekonote.recorder import _events_to_blocks
+            import pynput.mouse
+            import pynput.keyboard
+            import time
+
+            events = []
+            start_time = time.time()
+
+            def on_click(x, y, button, pressed):
+                if not pressed:
+                    return
+                if self._record_stop or time.time() - start_time > duration:
+                    return False
+                events.append({"time": time.time() - start_time, "type": "click", "x": int(x), "y": int(y), "button": str(button)})
+
+            typed_buf: list[str] = []
+            last_t = [start_time]
+
+            def flush():
+                if typed_buf:
+                    events.append({"time": last_t[0] - start_time, "type": "type", "text": "".join(typed_buf)})
+                    typed_buf.clear()
+
+            def on_key(key):
+                if self._record_stop or time.time() - start_time > duration:
+                    flush()
+                    return False
+                try:
+                    c = key.char
+                    if c:
+                        typed_buf.append(c)
+                        last_t[0] = time.time()
+                        return
+                except AttributeError:
+                    pass
+                flush()
+                kn = key.name if hasattr(key, "name") else str(key)
+                events.append({"time": time.time() - start_time, "type": "hotkey", "key": kn})
+
+            ml = pynput.mouse.Listener(on_click=on_click)
+            kl = pynput.keyboard.Listener(on_press=on_key)
+            ml.start()
+            kl.start()
+
+            # Wait (in thread to not block event loop)
+            await asyncio.to_thread(time.sleep, duration)
+            ml.stop()
+            kl.stop()
+            flush()
+
+            blocks = _events_to_blocks(events)
+            await self.send({"type": "record.completed", "blocks": blocks})
+        except Exception as e:
+            await self.send({"type": "record.failed", "error": str(e)})
 
     async def _run_execution(self, executor: FlowExecutor) -> None:
         try:

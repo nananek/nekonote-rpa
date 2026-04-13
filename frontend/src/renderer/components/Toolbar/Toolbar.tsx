@@ -1,9 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useFlowStore } from '../../stores/flowStore'
 import { useExecutionStore } from '../../stores/executionStore'
 import { wsClient } from '../../api/ws'
 import { t } from '../../i18n'
 import type { ViewMode } from '../../App'
+import type { FlowBlock } from '../../types/flow'
 
 
 interface ToolbarProps {
@@ -25,6 +26,28 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
   const canRedo = useFlowStore((s) => s.canRedo)
   const isRunning = useExecutionStore((s) => s.isRunning)
   const executionId = useExecutionStore((s) => s.executionId)
+  const addBlock = useFlowStore((s) => s.addBlock)
+  const [isRecording, setIsRecording] = useState(false)
+
+  // Listen for record events from backend
+  useEffect(() => {
+    const unsub = wsClient.subscribe((event: any) => {
+      if (event.type === 'record.started') {
+        setIsRecording(true)
+      } else if (event.type === 'record.completed') {
+        setIsRecording(false)
+        const blocks = event.blocks as FlowBlock[]
+        if (blocks?.length) {
+          for (const block of blocks) {
+            addBlock(block)
+          }
+        }
+      } else if (event.type === 'record.failed') {
+        setIsRecording(false)
+      }
+    })
+    return unsub
+  }, [addBlock])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -151,6 +174,23 @@ export function Toolbar({ viewMode, onViewModeChange }: ToolbarProps): JSX.Eleme
       ))}
 
       <div style={{ flex: 1 }} />
+
+      {!isRecording ? (
+        <button
+          onClick={() => wsClient.startRecording(30)}
+          style={{ ...btnBase, background: '#a855f7', color: '#fff', border: 'none', fontWeight: 600 }}
+          title="Record desktop operations for 30 seconds"
+        >
+          Rec
+        </button>
+      ) : (
+        <button
+          onClick={() => wsClient.stopRecording()}
+          style={{ ...btnBase, background: '#ef4444', color: '#fff', border: 'none', fontWeight: 600, animation: 'pulse 1s infinite' }}
+        >
+          Stop Rec
+        </button>
+      )}
 
       {!isRunning ? (
         <button
