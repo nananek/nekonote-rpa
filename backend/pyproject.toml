@@ -1,7 +1,7 @@
 [project]
-name = "nekonote-backend"
+name = "nekonote"
 version = "0.1.0"
-description = "Nekonote RPA execution engine"
+description = "nekonote - Python RPA toolkit"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
@@ -10,12 +10,20 @@ dependencies = [
     "websockets>=13.0",
 ]
 
+[project.scripts]
+nekonote = "nekonote.cli:main"
+
 [project.optional-dependencies]
 automation = [
     "playwright>=1.40.0",
     "pyautogui>=0.9.54",
     "pywinauto>=0.6.8",
     "pillow>=10.0.0",
+]
+uitree = [
+    "uitree @ git+https://github.com/nananek/uitree.git",
+    "uiautomation>=2.0.0",
+    "lxml>=4.9.0",
 ]
 
 [build-system]
