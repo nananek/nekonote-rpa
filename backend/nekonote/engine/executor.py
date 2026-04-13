@@ -15,7 +15,7 @@ import nekonote.engine.nodes.control  # noqa: F401
 import nekonote.engine.nodes.browser  # noqa: F401
 import nekonote.engine.nodes.desktop  # noqa: F401
 
-from nekonote.models.flow import Flow, FlowNode
+from nekonote.models.flow import Flow, FlowNode, SubFlow
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,56 @@ class FlowExecutor:
     def pause(self) -> None:
         """Pause at the next node."""
         self._step_mode = True
+
+    async def _execute_subflow(self, name: str, inputs: dict[str, Any]) -> None:
+        """Execute a named subflow from the flow definition."""
+        subflow = None
+        for sf in self.flow.subflows:
+            if sf.name == name or sf.id == name:
+                subflow = sf
+                break
+        if not subflow:
+            raise RuntimeError(f"Subflow not found: {name}")
+
+        # Build a temporary Flow from the subflow
+        sub_flow = Flow(
+            version=self.flow.version,
+            id=subflow.id,
+            name=subflow.name,
+            variables=subflow.inputs,
+            nodes=subflow.nodes,
+            edges=subflow.edges,
+        )
+
+        # Create sub-executor sharing the same context but with local scope for inputs
+        saved_vars = {}
+        for inp in subflow.inputs:
+            saved_vars[inp.name] = self.ctx.get(inp.name)
+            if inp.name in inputs:
+                self.ctx.set(inp.name, inputs[inp.name])
+            elif inp.default is not None:
+                self.ctx.set(inp.name, inp.default)
+
+        sub_executor = FlowExecutor(sub_flow, on_event=self.on_event)
+        sub_executor.ctx = self.ctx
+        sub_executor.execution_id = self.execution_id
+        sub_executor.breakpoints = self.breakpoints
+        sub_executor._step_mode = self._step_mode
+        sub_executor._resume_event = self._resume_event
+
+        await self._emit_log(f"Entering subflow: {name}")
+
+        # Execute subflow nodes
+        start_nodes = [n.id for n in sub_flow.nodes if n.id not in sub_executor._has_incoming]
+        if start_nodes:
+            await sub_executor._execute_node(start_nodes[0])
+
+        await self._emit_log(f"Exiting subflow: {name}")
+
+        # Restore input variables
+        for k, v in saved_vars.items():
+            if v is not None:
+                self.ctx.set(k, v)
 
     async def _cleanup(self) -> None:
         """Clean up resources like browser instances."""
@@ -229,6 +279,10 @@ class FlowExecutor:
                 name = params.get("name", "")
                 if name:
                     await self._emit_variable_changed(name, self.ctx.get(name))
+
+            # Handle subflow calls
+            if node.type == "subflow.call" and isinstance(result, dict) and "subflow_name" in result:
+                await self._execute_subflow(result["subflow_name"], result.get("inputs", {}))
 
             await self._emit(
                 {

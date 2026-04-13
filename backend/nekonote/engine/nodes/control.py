@@ -63,3 +63,13 @@ async def for_each_node(params: dict[str, Any], ctx: ExecutionContext) -> Any:
 async def try_catch_node(params: dict[str, Any], ctx: ExecutionContext) -> Any:
     """Marker node. Executor handles try/catch branching."""
     return True
+
+
+@register("subflow.call")
+async def subflow_call(params: dict[str, Any], ctx: ExecutionContext) -> Any:
+    """Call a sub-flow by name. The executor resolves the subflow definition."""
+    subflow_name = params.get("name", "")
+    # Input args
+    inputs = params.get("inputs", {})
+    # Store for executor to pick up
+    return {"subflow_name": subflow_name, "inputs": inputs}

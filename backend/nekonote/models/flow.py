@@ -32,6 +32,16 @@ class FlowEdge(BaseModel):
     targetHandle: str = "in"
 
 
+class SubFlow(BaseModel):
+    """A reusable sub-flow (function) with inputs and outputs."""
+    id: str = ""
+    name: str = ""
+    inputs: list[Variable] = Field(default_factory=list)
+    outputs: list[Variable] = Field(default_factory=list)
+    nodes: list[FlowNode] = Field(default_factory=list)
+    edges: list[FlowEdge] = Field(default_factory=list)
+
+
 class Flow(BaseModel):
     version: str = "1.0"
     id: str = ""
@@ -40,3 +50,4 @@ class Flow(BaseModel):
     variables: list[Variable] = Field(default_factory=list)
     nodes: list[FlowNode] = Field(default_factory=list)
     edges: list[FlowEdge] = Field(default_factory=list)
+    subflows: list[SubFlow] = Field(default_factory=list)
