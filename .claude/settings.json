@@ -3,7 +3,10 @@
     "nekonote": {
       "command": "python",
       "args": ["-m", "nekonote.mcp_server"],
-      "cwd": "./backend"
+      "cwd": "backend",
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1"
+      }
     }
   }
 }
