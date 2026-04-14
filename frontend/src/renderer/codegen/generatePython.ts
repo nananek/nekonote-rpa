@@ -158,7 +158,7 @@ function generateBlockCode(block: FlowBlock, lines: string[], level: number): vo
 
 function formatVal(value: unknown): string {
   if (value === undefined || value === null) return 'None'
-  if (typeof value === 'string') return `"${value.replace(/"/g, '\\"')}"`
+  if (typeof value === 'string') return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r')}"`
   if (typeof value === 'boolean') return value ? 'True' : 'False'
   return String(value)
 }
