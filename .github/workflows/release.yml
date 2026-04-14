@@ -25,6 +25,13 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Sync version from tag
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          cd frontend
+          npm version $version --no-git-tag-version
+        shell: pwsh
+
       # ── Backend ──
       - name: Install backend dependencies
         run: |
@@ -49,12 +56,12 @@ jobs:
           cd frontend
           npx electron-vite build
 
-      - name: Package and publish installer
+      - name: Package and publish
         run: |
           cd frontend
           npx electron-builder --win --config electron-builder.json --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # electron-builder publishes the installer AND latest.yml (for auto-update)
-      # to the GitHub Release. No separate upload step needed.
+      # electron-builder publishes the NSIS installer, portable ZIP, and
+      # latest.yml (for auto-update) to the GitHub Release.
