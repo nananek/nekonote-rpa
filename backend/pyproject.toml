@@ -28,7 +28,7 @@ mcp = [
     "mcp>=1.0.0",
 ]
 uitree = [
-    "uitree @ git+https://github.com/nananek/uitree.git",
+    "uitree @ git+https://github.com/nananek/uitree.git@41e8df1cdc8b2e37574a787f428ee0994276eb69",
     "uiautomation>=2.0.29",
     "lxml>=6.0.4",
 ]

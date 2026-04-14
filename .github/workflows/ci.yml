@@ -6,20 +6,23 @@ on:
   pull_request:
     branches: [master]
 
+permissions:
+  contents: read
+
 jobs:
   lint-and-check:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.13'
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version: '22'
 
@@ -39,10 +42,21 @@ jobs:
           python -m nekonote.cli --help
           python -m nekonote.cli list-actions
 
+      - name: Audit Python dependencies
+        run: |
+          pip install pip-audit
+          cd backend
+          pip-audit
+
       - name: Install frontend dependencies
         run: |
           cd frontend
           npm ci
+
+      - name: Audit npm dependencies
+        run: |
+          cd frontend
+          npm audit --audit-level=high
 
       - name: TypeScript type check
         run: |
@@ -61,15 +75,15 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version: '22'
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.13'
 
@@ -106,14 +120,14 @@ jobs:
 
       # ── Upload ──
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nekonote-installer
           path: frontend/release/*.exe
           retention-days: 30
 
       - name: Upload portable artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nekonote-portable
           path: frontend/release/*.zip
