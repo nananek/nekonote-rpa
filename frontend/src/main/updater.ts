@@ -11,12 +11,31 @@
 
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import { existsSync } from 'fs'
+import { dirname, join } from 'path'
 
 let checking = false
+
+/** Detect portable/zip extraction by checking for the uninstaller. */
+function isPortableInstall(): boolean {
+  try {
+    // NSIS installer creates an uninstall.exe next to the app
+    const appDir = dirname(app.getPath('exe'))
+    return !existsSync(join(appDir, 'Uninstall Nekonote.exe'))
+  } catch {
+    return false
+  }
+}
 
 export function setupAutoUpdate(): void {
   // No auto-updates during development
   if (!app.isPackaged) return
+
+  // No auto-updates in portable/zip mode (no installer to run)
+  if (isPortableInstall()) {
+    console.log('Portable mode detected — skipping auto-update.')
+    return
+  }
 
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
