@@ -70,7 +70,13 @@ async def desktop_hotkey(params: dict[str, Any], ctx: ExecutionContext) -> Any:
     if "," in keys_str:
         keys = [k.strip() for k in keys_str.split(",") if k.strip()]
     elif "+" in keys_str:
-        keys = [k.strip() for k in keys_str.split("+") if k.strip()]
+        s = keys_str
+        literal_plus = s == "+" or s.endswith("++")
+        if literal_plus:
+            s = s[:-1]
+        keys = [k.strip() for k in s.split("+") if k.strip()] if s else []
+        if literal_plus:
+            keys.append("+")
     else:
         keys = [keys_str.strip()] if keys_str.strip() else []
     if keys:
